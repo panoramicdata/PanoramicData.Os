@@ -181,7 +181,7 @@ Include:
 - Success metrics
 ```
 
-### For each Phase document:
+### For each Phase document
 
 ```
 Create plans/Phase-00X.md for [Phase Name] based on Specification.md and MASTER_PLAN.md.
