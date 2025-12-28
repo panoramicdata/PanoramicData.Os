@@ -1,87 +1,114 @@
+using PanoramicData.Os.CommandLine;
+using PanoramicData.Os.CommandLine.Specifications;
+
 namespace PanoramicData.Os.Init.Shell.Commands;
 
 /// <summary>
 /// Mkdir command - create directories.
 /// </summary>
-public class MkdirCommand : ICommand
+public class MkdirCommand : ShellCommand
 {
-    public string Name => "mkdir";
-    public string Description => "Create directories";
-    public string Usage => "mkdir [-p] directory...";
+	private static readonly ShellCommandSpecification _specification = new()
+	{
+		Name = "mkdir",
+		Description = "Create directories",
+		Usage = "mkdir [-p] directory...",
+		Category = "File",
+		Examples = ["mkdir newdir", "mkdir -p path/to/nested/dir"],
+		Options =
+		[
+			new OptionSpec<bool>
+			{
+				Name = "p",
+				ShortName = "p",
+				LongName = "parents",
+				Description = "Create parent directories as needed",
+				IsPositional = false,
+				IsRequired = false,
+				DefaultValue = false
+			},
+			new OptionSpec<string[]>
+			{
+				Name = "directories",
+				Description = "Directories to create",
+				IsPositional = true,
+				Position = 0,
+				IsRequired = true,
+				AllowMultiple = true
+			}
+		],
+		InputStreams = [],
+		OutputStreams = [],
+		ExitCodes =
+		[
+			StandardExitCodes.Success,
+			StandardExitCodes.InvalidArguments,
+			StandardExitCodes.AlreadyExists,
+			StandardExitCodes.DirectoryNotFound,
+			StandardExitCodes.PermissionDenied
+		],
+		ExecutionMode = ExecutionMode.Blocking
+	};
 
-    public int Execute(string[] args, Terminal terminal, ShellContext context)
-    {
-        if (args.Length == 0)
-        {
-            terminal.WriteLineColored("mkdir: missing operand", AnsiColors.Red);
-            return 1;
-        }
+	public override ShellCommandSpecification Specification => _specification;
 
-        var createParents = false;
-        var dirs = new List<string>();
+	protected override Task<CommandResult> ExecuteAsync(
+		CommandExecutionContext context,
+		CancellationToken cancellationToken)
+	{
+		var createParents = context.Parameters.ContainsKey("p");
+		var dirs = context.GetParameter<string[]>("positional", []);
 
-        foreach (var arg in args)
-        {
-            if (arg == "-p")
-            {
-                createParents = true;
-            }
-            else if (arg.StartsWith('-'))
-            {
-                terminal.WriteLineColored($"mkdir: invalid option -- '{arg[1]}'", AnsiColors.Red);
-                return 1;
-            }
-            else
-            {
-                dirs.Add(arg);
-            }
-        }
+		if (dirs.Length == 0)
+		{
+			context.Console.WriteError("mkdir: missing operand");
+			return Task.FromResult(CommandResult.BadRequest());
+		}
 
-        if (dirs.Count == 0)
-        {
-            terminal.WriteLineColored("mkdir: missing operand", AnsiColors.Red);
-            return 1;
-        }
+		var hasConflict = false;
+		var hasNotFound = false;
+		var hasError = false;
 
-        var exitCode = 0;
+		foreach (var dir in dirs)
+		{
+			var path = context.ResolvePath(dir);
 
-        foreach (var dir in dirs)
-        {
-            var path = context.ResolvePath(dir);
+			try
+			{
+				if (createParents)
+				{
+					Directory.CreateDirectory(path);
+				}
+				else
+				{
+					if (Directory.Exists(path))
+					{
+						context.Console.WriteError($"mkdir: cannot create directory '{dir}': File exists");
+						hasConflict = true;
+						continue;
+					}
 
-            try
-            {
-                if (createParents)
-                {
-                    Directory.CreateDirectory(path);
-                }
-                else
-                {
-                    if (Directory.Exists(path))
-                    {
-                        terminal.WriteLineColored($"mkdir: cannot create directory '{dir}': File exists", AnsiColors.Red);
-                        exitCode = 1;
-                        continue;
-                    }
+					var parent = Path.GetDirectoryName(path);
+					if (!string.IsNullOrEmpty(parent) && !Directory.Exists(parent))
+					{
+						context.Console.WriteError($"mkdir: cannot create directory '{dir}': No such file or directory");
+						hasNotFound = true;
+						continue;
+					}
 
-                    var parent = Path.GetDirectoryName(path);
-                    if (!string.IsNullOrEmpty(parent) && !Directory.Exists(parent))
-                    {
-                        terminal.WriteLineColored($"mkdir: cannot create directory '{dir}': No such file or directory", AnsiColors.Red);
-                        exitCode = 1;
-                        continue;
-                    }
+					Directory.CreateDirectory(path);
+				}
+			}
+			catch (Exception ex)
+			{
+				context.Console.WriteError($"mkdir: cannot create directory '{dir}': {ex.Message}");
+				hasError = true;
+			}
+		}
 
-                    Directory.CreateDirectory(path);
-                }
-            }
-            catch (Exception ex)
-            {
-                terminal.WriteLineColored($"mkdir: cannot create directory '{dir}': {ex.Message}", AnsiColors.Red);
-                exitCode = 1;
-            }
-        }
-
-        return exitCode;
-    }
+		if (hasConflict) return Task.FromResult(CommandResult.Conflict());
+		if (hasNotFound) return Task.FromResult(CommandResult.NotFound());
+		if (hasError) return Task.FromResult(CommandResult.InternalError());
+		return Task.FromResult(CommandResult.Ok());
+	}
 }

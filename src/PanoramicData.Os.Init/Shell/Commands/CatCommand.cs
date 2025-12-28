@@ -1,53 +1,100 @@
+using PanoramicData.Os.CommandLine;
+using PanoramicData.Os.CommandLine.Specifications;
+
 namespace PanoramicData.Os.Init.Shell.Commands;
 
 /// <summary>
 /// Cat command - concatenate and display file contents.
 /// </summary>
-public class CatCommand : ICommand
+public class CatCommand : ShellCommand
 {
-    public string Name => "cat";
-    public string Description => "Concatenate and display file contents";
-    public string Usage => "cat [file...]";
+	private static readonly ShellCommandSpecification _specification = new()
+	{
+		Name = "cat",
+		Description = "Concatenate and display file contents",
+		Usage = "cat [file...]",
+		Category = "File",
+		Examples = ["cat file.txt", "cat file1.txt file2.txt"],
+		Options =
+		[
+			new OptionSpec<string[]>
+			{
+				Name = "files",
+				Description = "Files to concatenate and display",
+				IsPositional = true,
+				Position = 0,
+				IsRequired = true,
+				AllowMultiple = true
+			}
+		],
+		InputStreams = [],
+		OutputStreams =
+		[
+			new StreamSpec<TextLine>
+			{
+				Name = "output",
+				Description = "File contents as text lines",
+				Requirement = StreamRequirement.Required
+			}
+		],
+		ExitCodes =
+		[
+			StandardExitCodes.Success,
+			StandardExitCodes.InvalidArguments,
+			StandardExitCodes.FileNotFound,
+			StandardExitCodes.PermissionDenied
+		],
+		ExecutionMode = ExecutionMode.Blocking
+	};
 
-    public int Execute(string[] args, Terminal terminal, ShellContext context)
-    {
-        if (args.Length == 0)
-        {
-            terminal.WriteLineColored("cat: missing file operand", AnsiColors.Red);
-            return 1;
-        }
+	public override ShellCommandSpecification Specification => _specification;
 
-        var exitCode = 0;
+	protected override async Task<CommandResult> ExecuteAsync(
+		CommandExecutionContext context,
+		CancellationToken cancellationToken)
+	{
+		var args = context.GetParameter<string[]>("positional", []);
 
-        foreach (var arg in args)
-        {
-            var path = context.ResolvePath(arg);
+		if (args.Length == 0)
+		{
+			context.Console.WriteError("cat: missing file operand");
+			return CommandResult.BadRequest();
+		}
 
-            if (!File.Exists(path))
-            {
-                terminal.WriteLineColored($"cat: {arg}: No such file or directory", AnsiColors.Red);
-                exitCode = 1;
-                continue;
-            }
+		var hasNotFound = false;
+		var hasError = false;
 
-            try
-            {
-                var content = File.ReadAllText(path);
-                terminal.Write(content);
-                
-                // Add newline if file doesn't end with one
-                if (!content.EndsWith('\n'))
-                {
-                    terminal.WriteLine();
-                }
-            }
-            catch (Exception ex)
-            {
-                terminal.WriteLineColored($"cat: {arg}: {ex.Message}", AnsiColors.Red);
-                exitCode = 1;
-            }
-        }
+		foreach (var arg in args)
+		{
+			var path = context.ResolvePath(arg);
 
-        return exitCode;
-    }
+			if (!File.Exists(path))
+			{
+				context.Console.WriteError($"cat: {arg}: No such file or directory");
+				hasNotFound = true;
+				continue;
+			}
+
+			try
+			{
+				var content = await File.ReadAllTextAsync(path, cancellationToken);
+				context.Console.Write(content);
+
+				// Add newline if file doesn't end with one
+				if (!content.EndsWith('\n'))
+				{
+					context.Console.WriteLine();
+				}
+			}
+			catch (Exception ex)
+			{
+				context.Console.WriteError($"cat: {arg}: {ex.Message}");
+				hasError = true;
+			}
+		}
+
+		if (hasNotFound) return CommandResult.NotFound();
+		if (hasError) return CommandResult.InternalError();
+		return CommandResult.Ok();
+	}
 }

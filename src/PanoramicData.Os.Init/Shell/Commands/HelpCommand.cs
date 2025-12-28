@@ -1,61 +1,105 @@
+using PanoramicData.Os.CommandLine;
+using PanoramicData.Os.CommandLine.Specifications;
+using Spectre.Console;
+
 namespace PanoramicData.Os.Init.Shell.Commands;
 
 /// <summary>
 /// Help command - display available commands.
 /// </summary>
-public class HelpCommand : ICommand
+public class HelpCommand : ShellCommand
 {
-    private readonly Dictionary<string, ICommand> _commands;
+	private static readonly ShellCommandSpecification _specification = new()
+	{
+		Name = "help",
+		Description = "Display available commands",
+		Usage = "help [command]",
+		Category = "Shell",
+		Examples = ["help", "help ls", "help cat"],
+		Options =
+		[
+			new OptionSpec<string>
+			{
+				Name = "command",
+				Description = "Command to get help for",
+				IsPositional = true,
+				Position = 0,
+				IsRequired = false
+			}
+		],
+		InputStreams = [],
+		OutputStreams =
+		[
+			new StreamSpec<TextLine>
+			{
+				Name = "output",
+				Description = "Help text",
+				Requirement = StreamRequirement.Required
+			}
+		],
+		ExitCodes =
+		[
+			StandardExitCodes.Success,
+			StandardExitCodes.NotFound
+		],
+		ExecutionMode = ExecutionMode.Blocking
+	};
 
-    public string Name => "help";
-    public string Description => "Display available commands";
-    public string Usage => "help [command]";
+	private readonly Dictionary<string, ICommand> _commands;
 
-    public HelpCommand(Dictionary<string, ICommand> commands)
-    {
-        _commands = commands;
-    }
+	public override ShellCommandSpecification Specification => _specification;
 
-    public int Execute(string[] args, Terminal terminal, ShellContext context)
-    {
-        if (args.Length > 0)
-        {
-            // Show help for specific command
-            var cmdName = args[0].ToLowerInvariant();
-            if (_commands.TryGetValue(cmdName, out var cmd))
-            {
-                terminal.WriteLineColored(cmd.Name, AnsiColors.BrightGreen);
-                terminal.WriteLine($"  {cmd.Description}");
-                terminal.WriteLine();
-                terminal.Write("  Usage: ");
-                terminal.WriteLineColored(cmd.Usage, AnsiColors.Yellow);
-                return 0;
-            }
-            else
-            {
-                terminal.WriteLineColored($"help: no help for '{cmdName}'", AnsiColors.Red);
-                return 1;
-            }
-        }
+	public HelpCommand(Dictionary<string, ICommand> commands)
+	{
+		_commands = commands;
+	}
 
-        // List all commands
-        terminal.WriteLineColored("PanoramicData.Os Shell - Available Commands", AnsiColors.BrightCyan);
-        terminal.WriteLineColored("============================================", AnsiColors.BrightCyan);
-        terminal.WriteLine();
+	protected override Task<CommandResult> ExecuteAsync(
+		CommandExecutionContext context,
+		CancellationToken cancellationToken)
+	{
+		var positional = context.GetParameter<string[]>("positional", []);
 
-        var maxNameLen = _commands.Values.Max(c => c.Name.Length);
+		if (positional.Length > 0)
+		{
+			// Show help for specific command
+			var cmdName = positional[0].ToLowerInvariant();
+			if (_commands.TryGetValue(cmdName, out var cmd))
+			{
+				context.Console.WriteColored(cmd.Name, Color.Green);
+				context.Console.WriteLine();
+				context.Console.WriteLine($"  {cmd.Description}");
+				context.Console.WriteLine();
+				context.Console.Write("  Usage: ");
+				context.Console.WriteColored(cmd.Usage, Color.Yellow);
+				context.Console.WriteLine();
+				return Task.FromResult(CommandResult.Ok());
+			}
+			else
+			{
+				context.Console.WriteError($"help: no help for '{cmdName}'");
+				return Task.FromResult(CommandResult.NotFound());
+			}
+		}
 
-        foreach (var cmd in _commands.Values.OrderBy(c => c.Name))
-        {
-            terminal.WriteColored($"  {cmd.Name.PadRight(maxNameLen + 2)}", AnsiColors.BrightGreen);
-            terminal.WriteLine(cmd.Description);
-        }
+		// List all commands
+		context.Console.WriteLineColored("PanoramicData.Os Shell - Available Commands", Color.Cyan1);
+		context.Console.WriteLineColored("============================================", Color.Cyan1);
+		context.Console.WriteLine();
 
-        terminal.WriteLine();
-        terminal.Write("Type ");
-        terminal.WriteColored("help <command>", AnsiColors.Yellow);
-        terminal.WriteLine(" for more information on a specific command.");
+		var maxNameLen = _commands.Values.Max(c => c.Name.Length);
 
-        return 0;
-    }
+		foreach (var cmd in _commands.Values.OrderBy(c => c.Name))
+		{
+			context.Console.WriteColored($"  {cmd.Name.PadRight(maxNameLen + 2)}", Color.Green);
+			context.Console.WriteLine(cmd.Description);
+		}
+
+		context.Console.WriteLine();
+		context.Console.Write("Type ");
+		context.Console.WriteColored("help <command>", Color.Yellow);
+		context.Console.WriteLine(" for more information on a specific command.");
+
+		return Task.FromResult(CommandResult.Ok());
+	}
 }

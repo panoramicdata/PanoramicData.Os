@@ -7,211 +7,258 @@ namespace PanoramicData.Os.Init.Shell;
 /// </summary>
 public class PanShell : IDisposable
 {
-    private readonly Terminal _terminal;
-    private readonly ShellContext _context;
-    private readonly Dictionary<string, ICommand> _commands;
-    private bool _disposed;
+	private readonly Terminal _terminal;
+	private readonly ShellContext _context;
+	private readonly Dictionary<string, ICommand> _commands;
+	private readonly LineEditor _lineEditor;
+	private ColorPalette _palette;
+	private bool _disposed;
 
-    public PanShell()
-    {
-        _terminal = new Terminal();
-        _context = new ShellContext();
-        _commands = new Dictionary<string, ICommand>(StringComparer.OrdinalIgnoreCase);
+	public PanShell()
+	{
+		_terminal = new Terminal();
+		_context = new ShellContext();
+		_commands = new Dictionary<string, ICommand>(StringComparer.OrdinalIgnoreCase);
+		_palette = ColorPalette.CreateDefaultDark();
+		_lineEditor = new LineEditor(_palette, CommandExists);
 
-        RegisterBuiltinCommands();
-    }
+		// Subscribe to palette changes
+		PaletteCommand.PaletteChanged += OnPaletteChanged;
+		PaletteCommand.CurrentPalette = _palette;
 
-    /// <summary>
-    /// Register all built-in commands.
-    /// </summary>
-    private void RegisterBuiltinCommands()
-    {
-        RegisterCommand(new CdCommand());
-        RegisterCommand(new LsCommand());
-        RegisterCommand(new PwdCommand());
-        RegisterCommand(new EchoCommand());
-        RegisterCommand(new CatCommand());
-        RegisterCommand(new ClearCommand());
-        RegisterCommand(new ExitCommand());
-        RegisterCommand(new UnameCommand());
-        RegisterCommand(new MkdirCommand());
-        RegisterCommand(new TouchCommand());
-        RegisterCommand(new RmCommand());
+		RegisterBuiltinCommands();
+	}
 
-        // Help command needs access to the command dictionary
-        RegisterCommand(new HelpCommand(_commands));
-    }
+	/// <summary>
+	/// Check if a command exists.
+	/// </summary>
+	private bool CommandExists(string commandName)
+	{
+		return _commands.ContainsKey(commandName);
+	}
 
-    /// <summary>
-    /// Register a command.
-    /// </summary>
-    public void RegisterCommand(ICommand command)
-    {
-        _commands[command.Name] = command;
-    }
+	/// <summary>
+	/// Handle palette changes from the palette command.
+	/// </summary>
+	private void OnPaletteChanged(ColorPalette newPalette)
+	{
+		_palette = newPalette;
+		PaletteCommand.CurrentPalette = _palette;
+	}
 
-    /// <summary>
-    /// Run the shell's main loop.
-    /// </summary>
-    public int Run()
-    {
-        PrintBanner();
+	/// <summary>
+	/// Register all built-in commands.
+	/// </summary>
+	private void RegisterBuiltinCommands()
+	{
+		RegisterCommand(new CdCommand());
+		RegisterCommand(new LsCommand());
+		RegisterCommand(new PwdCommand());
+		RegisterCommand(new EchoCommand());
+		RegisterCommand(new CatCommand());
+		RegisterCommand(new ClearCommand());
+		RegisterCommand(new ExitCommand());
+		RegisterCommand(new UnameCommand());
+		RegisterCommand(new MkdirCommand());
+		RegisterCommand(new TouchCommand());
+		RegisterCommand(new RmCommand());
+		RegisterCommand(new PingCommand());
+		RegisterCommand(new PoweroffCommand());
+		RegisterCommand(new PaletteCommand());
 
-        while (!_context.ShouldExit)
-        {
-            try
-            {
-                PrintPrompt();
+		// Help command needs access to the command dictionary
+		RegisterCommand(new HelpCommand(_commands));
+	}
 
-                var line = _terminal.ReadLine();
-                
-                if (line == null)
-                {
-                    // EOF or Ctrl+C
-                    _terminal.WriteLine();
-                    continue;
-                }
+	/// <summary>
+	/// Register a command.
+	/// </summary>
+	public void RegisterCommand(ICommand command)
+	{
+		_commands[command.Name] = command;
+	}
 
-                var trimmedLine = line.Trim();
-                if (string.IsNullOrEmpty(trimmedLine))
-                {
-                    continue;
-                }
+	/// <summary>
+	/// Run the shell's main loop.
+	/// </summary>
+	public int Run()
+	{
+		PrintBanner();
 
-                ExecuteLine(trimmedLine);
-            }
-            catch (Exception ex)
-            {
-                _terminal.WriteLineColored($"Error: {ex.Message}", AnsiColors.Red);
-            }
-        }
+		while (!_context.ShouldExit)
+		{
+			try
+			{
+				var promptLength = PrintPrompt();
 
-        _terminal.WriteLine("Goodbye!");
-        return _context.ExitCode;
-    }
+				var line = _lineEditor.ReadLine(promptLength);
 
-    /// <summary>
-    /// Print the shell banner.
-    /// </summary>
-    private void PrintBanner()
-    {
-        _terminal.WriteLine();
-        _terminal.WriteLineColored("╔════════════════════════════════════════════════════════════╗", AnsiColors.BrightCyan);
-        _terminal.WriteLineColored("║                                                            ║", AnsiColors.BrightCyan);
-        _terminal.Write(AnsiColors.BrightCyan + "║  ");
-        _terminal.WriteColored("PanoramicData.Os Shell", AnsiColors.BrightWhite + AnsiColors.Bold);
-        _terminal.WriteLineColored("                                  ║", AnsiColors.BrightCyan);
-        _terminal.Write(AnsiColors.BrightCyan + "║  ");
-        _terminal.WriteColored($"Powered by .NET {Environment.Version}", AnsiColors.BrightGreen);
-        _terminal.WriteLineColored("                              ║", AnsiColors.BrightCyan);
-        _terminal.WriteLineColored("║                                                            ║", AnsiColors.BrightCyan);
-        _terminal.Write(AnsiColors.BrightCyan + "║  ");
-        _terminal.WriteColored("Type 'help' for available commands", AnsiColors.Yellow);
-        _terminal.WriteLineColored("                      ║", AnsiColors.BrightCyan);
-        _terminal.WriteLineColored("╚════════════════════════════════════════════════════════════╝", AnsiColors.BrightCyan);
-        _terminal.WriteLine();
-    }
+				if (line == null)
+				{
+					// EOF or Ctrl+C
+					_terminal.WriteLine();
+					continue;
+				}
 
-    /// <summary>
-    /// Print the shell prompt.
-    /// </summary>
-    private void PrintPrompt()
-    {
-        _terminal.WriteColored(_context.Username, AnsiColors.BrightGreen);
-        _terminal.WriteColored("@", AnsiColors.White);
-        _terminal.WriteColored(_context.Hostname, AnsiColors.BrightGreen);
-        _terminal.WriteColored(":", AnsiColors.White);
-        _terminal.WriteColored(_context.GetDisplayPath(), AnsiColors.BrightBlue);
-        _terminal.WriteColored("$ ", AnsiColors.White);
-    }
+				// Handle Ctrl+L (clear screen)
+				if (line == "\x0C")
+				{
+					PrintBanner();
+					continue;
+				}
 
-    /// <summary>
-    /// Execute a command line.
-    /// </summary>
-    private void ExecuteLine(string line)
-    {
-        var parts = ParseCommandLine(line);
-        if (parts.Length == 0) return;
+				var trimmedLine = line.Trim();
+				if (string.IsNullOrEmpty(trimmedLine))
+				{
+					continue;
+				}
 
-        var commandName = parts[0].ToLowerInvariant();
-        var args = parts.Skip(1).ToArray();
+				ExecuteLine(trimmedLine);
+			}
+			catch (Exception ex)
+			{
+				_terminal.WriteLineColored($"Error: {ex.Message}", AnsiColors.Red);
+			}
+		}
 
-        if (_commands.TryGetValue(commandName, out var command))
-        {
-            try
-            {
-                _context.LastExitCode = command.Execute(args, _terminal, _context);
-            }
-            catch (Exception ex)
-            {
-                _terminal.WriteLineColored($"{commandName}: {ex.Message}", AnsiColors.Red);
-                _context.LastExitCode = 1;
-            }
-        }
-        else
-        {
-            _terminal.WriteLineColored($"{commandName}: command not found", AnsiColors.Red);
-            _context.LastExitCode = 127;
-        }
-    }
+		_terminal.WriteLine("Goodbye!");
+		return _context.ExitCode;
+	}
 
-    /// <summary>
-    /// Parse a command line into parts, handling quotes.
-    /// </summary>
-    private static string[] ParseCommandLine(string line)
-    {
-        var parts = new List<string>();
-        var current = new System.Text.StringBuilder();
-        var inQuote = false;
-        var quoteChar = '"';
+	/// <summary>
+	/// Print the shell banner.
+	/// </summary>
+	private void PrintBanner()
+	{
+		_terminal.WriteLine();
+		_terminal.WriteLineColored("╔════════════════════════════════════════════════════════════╗", AnsiColors.BrightCyan);
+		_terminal.WriteLineColored("║                                                            ║", AnsiColors.BrightCyan);
+		_terminal.Write(AnsiColors.BrightCyan + "║  ");
+		_terminal.WriteColored("PanoramicData.Os Shell", AnsiColors.BrightWhite + AnsiColors.Bold);
+		_terminal.WriteLineColored("                                  ║", AnsiColors.BrightCyan);
+		_terminal.Write(AnsiColors.BrightCyan + "║  ");
+		_terminal.WriteColored($"Powered by .NET {Environment.Version}", AnsiColors.BrightGreen);
+		_terminal.WriteLineColored("                              ║", AnsiColors.BrightCyan);
+		_terminal.WriteLineColored("║                                                            ║", AnsiColors.BrightCyan);
+		_terminal.Write(AnsiColors.BrightCyan + "║  ");
+		_terminal.WriteColored("Type 'help' for available commands", AnsiColors.Yellow);
+		_terminal.WriteLineColored("                      ║", AnsiColors.BrightCyan);
+		_terminal.WriteLineColored("╚════════════════════════════════════════════════════════════╝", AnsiColors.BrightCyan);
+		_terminal.WriteLine();
+	}
 
-        foreach (var c in line)
-        {
-            if (inQuote)
-            {
-                if (c == quoteChar)
-                {
-                    inQuote = false;
-                }
-                else
-                {
-                    current.Append(c);
-                }
-            }
-            else
-            {
-                if (c == '"' || c == '\'')
-                {
-                    inQuote = true;
-                    quoteChar = c;
-                }
-                else if (char.IsWhiteSpace(c))
-                {
-                    if (current.Length > 0)
-                    {
-                        parts.Add(current.ToString());
-                        current.Clear();
-                    }
-                }
-                else
-                {
-                    current.Append(c);
-                }
-            }
-        }
+	/// <summary>
+	/// Print the shell prompt and return its length.
+	/// </summary>
+	private int PrintPrompt()
+	{
+		var user = _context.Username;
+		var host = _context.Hostname;
+		var path = _context.GetDisplayPath();
 
-        if (current.Length > 0)
-        {
-            parts.Add(current.ToString());
-        }
+		// Use palette colors for prompt
+		_terminal.Write(_palette.GetColor(TokenType.PromptUser) + user + AnsiColors.Reset);
+		_terminal.Write(_palette.GetColor(TokenType.PromptSeparator) + "@" + AnsiColors.Reset);
+		_terminal.Write(_palette.GetColor(TokenType.PromptHost) + host + AnsiColors.Reset);
+		_terminal.Write(_palette.GetColor(TokenType.PromptSeparator) + ":" + AnsiColors.Reset);
+		_terminal.Write(_palette.GetColor(TokenType.PromptPath) + path + AnsiColors.Reset);
+		_terminal.Write(_palette.GetColor(TokenType.PromptSymbol) + "$ " + AnsiColors.Reset);
 
-        return [.. parts];
-    }
+		// Return total prompt length (user@host:path$ )
+		return user.Length + 1 + host.Length + 1 + path.Length + 2;
+	}
 
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        _terminal.Dispose();
-    }
+	/// <summary>
+	/// Execute a command line.
+	/// </summary>
+	private void ExecuteLine(string line)
+	{
+		var parts = ParseCommandLine(line);
+		if (parts.Length == 0) return;
+
+		var commandName = parts[0].ToLowerInvariant();
+		var args = parts.Skip(1).ToArray();
+
+		if (_commands.TryGetValue(commandName, out var command))
+		{
+			try
+			{
+				_context.LastExitCode = command.Execute(args, _terminal, _context);
+			}
+			catch (Exception ex)
+			{
+				_terminal.WriteLineColored($"{commandName}: {ex.Message}", AnsiColors.Red);
+				_context.LastExitCode = 1;
+			}
+		}
+		else
+		{
+			_terminal.WriteLineColored($"{commandName}: command not found", AnsiColors.Red);
+			_context.LastExitCode = 127;
+		}
+	}
+
+	/// <summary>
+	/// Parse a command line into parts, handling quotes.
+	/// </summary>
+	private static string[] ParseCommandLine(string line)
+	{
+		var parts = new List<string>();
+		var current = new System.Text.StringBuilder();
+		var inQuote = false;
+		var quoteChar = '"';
+
+		foreach (var c in line)
+		{
+			if (inQuote)
+			{
+				if (c == quoteChar)
+				{
+					inQuote = false;
+				}
+				else
+				{
+					current.Append(c);
+				}
+			}
+			else
+			{
+				if (c == '"' || c == '\'')
+				{
+					inQuote = true;
+					quoteChar = c;
+				}
+				else if (char.IsWhiteSpace(c))
+				{
+					if (current.Length > 0)
+					{
+						parts.Add(current.ToString());
+						current.Clear();
+					}
+				}
+				else
+				{
+					current.Append(c);
+				}
+			}
+		}
+
+		if (current.Length > 0)
+		{
+			parts.Add(current.ToString());
+		}
+
+		return [.. parts];
+	}
+
+	public void Dispose()
+	{
+		if (_disposed) return;
+		_disposed = true;
+
+		// Unsubscribe from events
+		PaletteCommand.PaletteChanged -= OnPaletteChanged;
+
+		_terminal.Dispose();
+	}
 }

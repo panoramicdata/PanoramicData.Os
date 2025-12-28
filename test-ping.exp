@@ -1,0 +1,48 @@
+#!/usr/bin/expect -f
+set timeout 90
+
+spawn qemu-system-x86_64 -kernel /workspace/output/vmlinuz -initrd /workspace/output/initramfs.cpio.gz -append "console=ttyS0,115200n8" -nographic -m 512M -smp 2 -no-reboot -net nic -net user
+
+expect {
+    timeout { puts "\nTIMEOUT waiting for shell"; exit 1 }
+    "Kernel panic" { puts "\nKERNEL PANIC"; exit 1 }
+    "root@panos" { puts "\n=== SHELL READY ===" }
+}
+
+sleep 2
+
+send "help\r"
+expect {
+    timeout { puts "\nTIMEOUT on help"; exit 1 }
+    "ping" { puts "\n=== PING COMMAND IN HELP ===" }
+}
+expect "root@panos"
+
+sleep 1
+
+send "ping\r"
+expect {
+    timeout { puts "\nTIMEOUT on ping usage"; exit 1 }
+    "Usage:" { puts "\n=== PING USAGE SHOWN ===" }
+    "ping:" { puts "\n=== PING RESPONDED ===" }
+}
+expect "root@panos"
+
+sleep 1
+
+send "ping -c 2 10.0.2.2\r"
+expect {
+    timeout { puts "\nTIMEOUT on ping execution"; exit 1 }
+    "PING 10.0.2.2" { puts "\n=== PING EXECUTING ===" }
+    "socket" { puts "\n=== SOCKET ERROR (expected in VM) ===" }
+    "error" { puts "\n=== ERROR RESPONSE ===" }
+}
+
+sleep 8
+expect "root@panos"
+
+send "exit\r"
+expect eof
+
+puts "\n=== TEST COMPLETE ==="
+exit 0

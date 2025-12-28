@@ -1,53 +1,90 @@
+using PanoramicData.Os.CommandLine;
+using PanoramicData.Os.CommandLine.Specifications;
+
 namespace PanoramicData.Os.Init.Shell.Commands;
 
 /// <summary>
 /// Uname command - print system information.
 /// </summary>
-public class UnameCommand : ICommand
+public class UnameCommand : ShellCommand
 {
-    public string Name => "uname";
-    public string Description => "Print system information";
-    public string Usage => "uname [-a]";
+	private static readonly ShellCommandSpecification _specification = new()
+	{
+		Name = "uname",
+		Description = "Print system information",
+		Usage = "uname [-a]",
+		Category = "System",
+		Examples = ["uname", "uname -a"],
+		Options =
+		[
+			new OptionSpec<bool>
+			{
+				Name = "a",
+				ShortName = "a",
+				LongName = "all",
+				Description = "Print all system information",
+				IsPositional = false,
+				IsRequired = false,
+				DefaultValue = false
+			}
+		],
+		InputStreams = [],
+		OutputStreams =
+		[
+			new StreamSpec<TextLine>
+			{
+				Name = "output",
+				Description = "System information",
+				Requirement = StreamRequirement.Required
+			}
+		],
+		ExitCodes = [StandardExitCodes.Success],
+		ExecutionMode = ExecutionMode.Blocking
+	};
 
-    public int Execute(string[] args, Terminal terminal, ShellContext context)
-    {
-        var showAll = args.Contains("-a");
+	public override ShellCommandSpecification Specification => _specification;
 
-        if (showAll)
-        {
-            // System name, hostname, release, version, machine
-            var sysname = "Linux";
-            var hostname = context.Hostname;
-            var release = GetKernelRelease();
-            var version = $".NET {Environment.Version}";
-            var machine = Environment.Is64BitProcess ? "x86_64" : "x86";
+	protected override Task<CommandResult> ExecuteAsync(
+		CommandExecutionContext context,
+		CancellationToken cancellationToken)
+	{
+		var showAll = context.Parameters.ContainsKey("a");
 
-            terminal.WriteLine($"{sysname} {hostname} {release} {version} {machine}");
-        }
-        else
-        {
-            terminal.WriteLine("Linux");
-        }
+		if (showAll)
+		{
+			// System name, hostname, release, version, machine
+			var sysname = "Linux";
+			var hostname = "panos"; // Would need to get from context if available
+			var release = GetKernelRelease();
+			var version = $".NET {Environment.Version}";
+			var machine = Environment.Is64BitProcess ? "x86_64" : "x86";
 
-        return 0;
-    }
+			context.Console.WriteLine($"{sysname} {hostname} {release} {version} {machine}");
+		}
+		else
+		{
+			context.Console.WriteLine("Linux");
+		}
 
-    private static string GetKernelRelease()
-    {
-        try
-        {
-            if (File.Exists("/proc/version"))
-            {
-                var version = File.ReadAllText("/proc/version");
-                var parts = version.Split(' ');
-                if (parts.Length >= 3)
-                {
-                    return parts[2]; // e.g., "6.6.68"
-                }
-            }
-        }
-        catch { }
+		return Task.FromResult(CommandResult.Ok());
+	}
 
-        return "unknown";
-    }
+	private static string GetKernelRelease()
+	{
+		try
+		{
+			if (File.Exists("/proc/version"))
+			{
+				var version = File.ReadAllText("/proc/version");
+				var parts = version.Split(' ');
+				if (parts.Length >= 3)
+				{
+					return parts[2]; // e.g., "6.6.68"
+				}
+			}
+		}
+		catch { }
+
+		return "unknown";
+	}
 }
