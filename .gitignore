@@ -1,4 +1,39 @@
+# Build output
+output/
+build/
 
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
 
-#Ignore vscode AI rules
-.github\instructions\codacy.instructions.md
+# .NET
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+
+# NuGet
+packages/
+*.nupkg
+
+# Docker
+.docker/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Buildroot
+.buildroot/
+dl/
+
+# Ignore vscode AI rules
+.github/instructions/codacy.instructions.md

@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifier>linux-musl-x64</RuntimeIdentifier>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    
+    <!-- NativeAOT Configuration -->
+    <PublishAot>true</PublishAot>
+    <SelfContained>true</SelfContained>
+    
+    <!-- Size Optimization -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IlcOptimizationPreference>Size</IlcOptimizationPreference>
+    <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
+    <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
+    <StackTraceSupport>false</StackTraceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    
+    <!-- Disable unused features -->
+    <DebuggerSupport>false</DebuggerSupport>
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <EventSourceSupport>false</EventSourceSupport>
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+    
+    <!-- Trimming -->
+    <TrimMode>link</TrimMode>
+    <PublishTrimmed>true</PublishTrimmed>
+    
+    <!-- Root namespace -->
+    <RootNamespace>PanoramicData.Os.Init</RootNamespace>
+    <AssemblyName>PanoramicData.Os.Init</AssemblyName>
+    
+    <!-- Cross-compilation settings for musl -->
+    <!-- Tell NativeAOT to use gcc-style linker (bfd) instead of clang style -->
+    <LinkerFlavor>bfd</LinkerFlavor>
+    
+    <!-- Allow unsafe code for P/Invoke -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+</Project>
