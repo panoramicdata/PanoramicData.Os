@@ -1,6 +1,5 @@
-using System.Runtime.InteropServices;
 using System.Text;
-using PanoramicData.Os.Init.Linux;
+using PanoramicData.Os.Init.Shell.IO;
 
 namespace PanoramicData.Os.Init.Shell;
 
@@ -9,18 +8,16 @@ namespace PanoramicData.Os.Init.Shell;
 /// </summary>
 public sealed class Terminal : IDisposable
 {
-	private readonly int _inputFd;
-	private readonly int _outputFd;
+	private readonly ITerminalIO _io;
 	private bool _disposed;
-	private readonly byte[] _readBuffer = new byte[256];
 
-	public Terminal()
+	public Terminal() : this(TerminalIOFactory.Create())
 	{
-		// Use stdin (0) and stdout (1)
-		_inputFd = 0;
-		_outputFd = 1;
+	}
 
-		// Configure terminal for raw input
+	public Terminal(ITerminalIO io)
+	{
+		_io = io;
 		ConfigureTerminal();
 	}
 
@@ -39,17 +36,7 @@ public sealed class Terminal : IDisposable
 	public void Write(string text)
 	{
 		if (_disposed) return;
-
-		var bytes = Encoding.UTF8.GetBytes(text);
-		var handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
-		try
-		{
-			Syscalls.write(_outputFd, handle.AddrOfPinnedObject(), bytes.Length);
-		}
-		finally
-		{
-			handle.Free();
-		}
+		_io.Write(text);
 	}
 
 	/// <summary>
@@ -84,54 +71,46 @@ public sealed class Terminal : IDisposable
 		if (_disposed) return null;
 
 		var line = new StringBuilder();
-		var handle = GCHandle.Alloc(_readBuffer, GCHandleType.Pinned);
 
-		try
+		while (true)
 		{
-			while (true)
+			var b = _io.ReadByte();
+
+			if (b < 0)
 			{
-				var bytesRead = Syscalls.read(_inputFd, handle.AddrOfPinnedObject(), 1);
+				if (line.Length == 0) return null;
+				break;
+			}
 
-				if (bytesRead <= 0)
-				{
-					if (line.Length == 0) return null;
-					break;
-				}
+			var c = (char)b;
 
-				var c = (char)_readBuffer[0];
-
-				if (c == '\n' || c == '\r')
+			if (c == '\n' || c == '\r')
+			{
+				WriteLine();
+				break;
+			}
+			else if (c == '\x7f' || c == '\b') // Backspace
+			{
+				if (line.Length > 0)
 				{
-					WriteLine();
-					break;
-				}
-				else if (c == '\x7f' || c == '\b') // Backspace
-				{
-					if (line.Length > 0)
-					{
-						line.Length--;
-						Write("\b \b"); // Erase character
-					}
-				}
-				else if (c == '\x03') // Ctrl+C
-				{
-					WriteLine("^C");
-					return null;
-				}
-				else if (c == '\x04') // Ctrl+D
-				{
-					if (line.Length == 0) return null;
-				}
-				else if (c >= ' ') // Printable characters
-				{
-					line.Append(c);
-					Write(c.ToString());
+					line.Length--;
+					Write("\b \b"); // Erase character
 				}
 			}
-		}
-		finally
-		{
-			handle.Free();
+			else if (c == '\x03') // Ctrl+C
+			{
+				WriteLine("^C");
+				return null;
+			}
+			else if (c == '\x04') // Ctrl+D
+			{
+				if (line.Length == 0) return null;
+			}
+			else if (c >= ' ') // Printable characters
+			{
+				line.Append(c);
+				Write(c.ToString());
+			}
 		}
 
 		return line.ToString();
@@ -150,5 +129,6 @@ public sealed class Terminal : IDisposable
 		if (_disposed) return;
 		_disposed = true;
 		Write(AnsiColors.Reset);
+		_io.Dispose();
 	}
 }

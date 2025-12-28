@@ -1,3 +1,5 @@
+using PanoramicData.Os.CommandLine.Specifications;
+
 namespace PanoramicData.Os.Init.Shell.Commands;
 
 /// <summary>
@@ -19,6 +21,11 @@ public interface ICommand
 	/// Usage information for the command.
 	/// </summary>
 	string Usage { get; }
+
+	/// <summary>
+	/// Gets the command specification (may be null for legacy commands).
+	/// </summary>
+	ShellCommandSpecification? Specification => null;
 
 	/// <summary>
 	/// Execute the command with the given arguments.

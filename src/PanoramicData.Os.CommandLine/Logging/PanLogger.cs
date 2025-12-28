@@ -5,26 +5,18 @@ namespace PanoramicData.Os.CommandLine.Logging;
 /// <summary>
 /// Default logger implementation that wraps an ILogger.
 /// </summary>
-public class PanLogger : IPanLogger
+/// <remarks>
+/// Create a new PanLogger wrapping an ILogger.
+/// </remarks>
+public class PanLogger(ILogger logger, PanLogLevel minimumLevel = PanLogLevel.Information) : IPanLogger
 {
-	private readonly ILogger _logger;
-	private readonly PanLogLevel _minimumLevel;
-
-	/// <summary>
-	/// Create a new PanLogger wrapping an ILogger.
-	/// </summary>
-	public PanLogger(ILogger logger, PanLogLevel minimumLevel = PanLogLevel.Information)
-	{
-		_logger = logger;
-		_minimumLevel = minimumLevel;
-	}
 
 	/// <inheritdoc />
 	public void Trace(string message)
 	{
 		if (IsEnabled(PanLogLevel.Trace))
 		{
-			_logger.LogTrace("{Message}", message);
+			logger.LogTrace("{Message}", message);
 		}
 	}
 
@@ -33,7 +25,7 @@ public class PanLogger : IPanLogger
 	{
 		if (IsEnabled(PanLogLevel.Debug))
 		{
-			_logger.LogDebug("{Message}", message);
+			logger.LogDebug("{Message}", message);
 		}
 	}
 
@@ -42,7 +34,7 @@ public class PanLogger : IPanLogger
 	{
 		if (IsEnabled(PanLogLevel.Information))
 		{
-			_logger.LogInformation("{Message}", message);
+			logger.LogInformation("{Message}", message);
 		}
 	}
 
@@ -51,7 +43,7 @@ public class PanLogger : IPanLogger
 	{
 		if (IsEnabled(PanLogLevel.Warning))
 		{
-			_logger.LogWarning("{Message}", message);
+			logger.LogWarning("{Message}", message);
 		}
 	}
 
@@ -60,7 +52,7 @@ public class PanLogger : IPanLogger
 	{
 		if (IsEnabled(PanLogLevel.Error))
 		{
-			_logger.LogError("{Message}", message);
+			logger.LogError("{Message}", message);
 		}
 	}
 
@@ -69,7 +61,7 @@ public class PanLogger : IPanLogger
 	{
 		if (IsEnabled(PanLogLevel.Error))
 		{
-			_logger.LogError(exception, "{Message}", message);
+			logger.LogError(exception, "{Message}", message);
 		}
 	}
 
@@ -78,7 +70,7 @@ public class PanLogger : IPanLogger
 	{
 		if (IsEnabled(PanLogLevel.Critical))
 		{
-			_logger.LogCritical("{Message}", message);
+			logger.LogCritical("{Message}", message);
 		}
 	}
 
@@ -87,13 +79,13 @@ public class PanLogger : IPanLogger
 	{
 		if (IsEnabled(PanLogLevel.Critical))
 		{
-			_logger.LogCritical(exception, "{Message}", message);
+			logger.LogCritical(exception, "{Message}", message);
 		}
 	}
 
 	/// <inheritdoc />
 	public bool IsEnabled(PanLogLevel level)
 	{
-		return level >= _minimumLevel && _logger.IsEnabled(level.ToLogLevel());
+		return level >= minimumLevel && logger.IsEnabled(level.ToLogLevel());
 	}
 }

@@ -7,7 +7,7 @@ namespace PanoramicData.Os.Init.Shell.Commands;
 /// <summary>
 /// Help command - display available commands.
 /// </summary>
-public class HelpCommand : ShellCommand
+public class HelpCommand(Dictionary<string, ICommand> commands) : ShellCommand
 {
 	private static readonly ShellCommandSpecification _specification = new()
 	{
@@ -45,14 +45,7 @@ public class HelpCommand : ShellCommand
 		ExecutionMode = ExecutionMode.Blocking
 	};
 
-	private readonly Dictionary<string, ICommand> _commands;
-
 	public override ShellCommandSpecification Specification => _specification;
-
-	public HelpCommand(Dictionary<string, ICommand> commands)
-	{
-		_commands = commands;
-	}
 
 	protected override Task<CommandResult> ExecuteAsync(
 		CommandExecutionContext context,
@@ -64,7 +57,7 @@ public class HelpCommand : ShellCommand
 		{
 			// Show help for specific command
 			var cmdName = positional[0].ToLowerInvariant();
-			if (_commands.TryGetValue(cmdName, out var cmd))
+			if (commands.TryGetValue(cmdName, out var cmd))
 			{
 				context.Console.WriteColored(cmd.Name, Color.Green);
 				context.Console.WriteLine();
@@ -87,9 +80,9 @@ public class HelpCommand : ShellCommand
 		context.Console.WriteLineColored("============================================", Color.Cyan1);
 		context.Console.WriteLine();
 
-		var maxNameLen = _commands.Values.Max(c => c.Name.Length);
+		var maxNameLen = commands.Values.Max(c => c.Name.Length);
 
-		foreach (var cmd in _commands.Values.OrderBy(c => c.Name))
+		foreach (var cmd in commands.Values.OrderBy(c => c.Name))
 		{
 			context.Console.WriteColored($"  {cmd.Name.PadRight(maxNameLen + 2)}", Color.Green);
 			context.Console.WriteLine(cmd.Description);

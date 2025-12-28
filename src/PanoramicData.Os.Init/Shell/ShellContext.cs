@@ -8,7 +8,20 @@ public class ShellContext
 	/// <summary>
 	/// Current working directory.
 	/// </summary>
-	public string CurrentDirectory { get; set; } = "/";
+	public string CurrentDirectory { get; set; } = GetInitialDirectory();
+
+	/// <summary>
+	/// Gets the initial directory based on the operating system.
+	/// </summary>
+	private static string GetInitialDirectory()
+	{
+		if (OperatingSystem.IsWindows())
+		{
+			// On Windows, start at the root of the current drive
+			return Path.GetPathRoot(Environment.CurrentDirectory) ?? "C:\\";
+		}
+		return "/";
+	}
 
 	/// <summary>
 	/// Flag indicating whether the shell should exit.
@@ -41,15 +54,30 @@ public class ShellContext
 	public string GetDisplayPath()
 	{
 		var path = CurrentDirectory;
+		var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
 		// Replace home directory with ~
-		if (path == "/root")
+		if (OperatingSystem.IsWindows())
 		{
-			return "~";
+			if (string.Equals(path, homePath, StringComparison.OrdinalIgnoreCase))
+			{
+				return "~";
+			}
+			else if (path.StartsWith(homePath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+			{
+				return "~" + path[homePath.Length..].Replace('\\', '/');
+			}
 		}
-		else if (path.StartsWith("/root/"))
+		else
 		{
-			return "~" + path[5..];
+			if (path == "/root")
+			{
+				return "~";
+			}
+			else if (path.StartsWith("/root/"))
+			{
+				return "~" + path[5..];
+			}
 		}
 
 		return path;

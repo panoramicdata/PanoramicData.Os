@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<LangVersion>latest</LangVersion>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<RootNamespace>PanoramicData.Os.Shell.Runner</RootNamespace>
+	</PropertyGroup>
+
+	<!-- Include source files from Init project -->
+	<ItemGroup>
+		<Compile Include="..\PanoramicData.Os.Init\Shell\**\*.cs" LinkBase="Shell" />
+		<Compile Include="..\PanoramicData.Os.Init\Linux\**\*.cs" LinkBase="Linux" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\PanoramicData.Os.CommandLine\PanoramicData.Os.CommandLine.csproj" />
+	</ItemGroup>
+
+</Project>

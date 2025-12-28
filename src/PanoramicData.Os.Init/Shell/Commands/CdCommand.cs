@@ -52,7 +52,7 @@ public class CdCommand : ShellCommand
 		if (args.Length == 0 || args[0] == "~")
 		{
 			// cd with no args goes to home directory
-			targetPath = "/root";
+			targetPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 		}
 		else
 		{

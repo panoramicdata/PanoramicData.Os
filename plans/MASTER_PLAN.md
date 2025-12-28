@@ -96,8 +96,9 @@ PanoramicData.Os is a custom operating system built on a minimal Linux kernel wi
 | 6 | Window Manager | 3 weeks | Phase 5 | 🔲 Not Started | [Phase-006.md](Phase-006.md) |
 | 7 | Built-in Apps | 3 weeks | Phase 6 | 🔲 Not Started | [Phase-007.md](Phase-007.md) |
 | 8 | Multi-VM Support & Polish | 4 weeks | All Phases | 🔲 Not Started | [Phase-008.md](Phase-008.md) |
+| 9 | Object Streaming Infrastructure | 4 weeks | Phase 1 | 🟡 In Progress | [Phase-009.md](Phase-009.md) |
 
-**Total Duration:** 26 weeks (approximately 6 months)
+**Total Duration:** 30 weeks (approximately 7 months)
 
 ---
 

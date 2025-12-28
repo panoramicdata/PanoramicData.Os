@@ -1,36 +1,33 @@
-using System.Runtime.InteropServices;
 using System.Text;
-using PanoramicData.Os.Init.Linux;
+using PanoramicData.Os.CommandLine.Specifications;
+using PanoramicData.Os.Init.Shell.Completion;
+using PanoramicData.Os.Init.Shell.IO;
 
 namespace PanoramicData.Os.Init.Shell;
 
 /// <summary>
-/// Represents a token in the command line for syntax highlighting.
-/// </summary>
-public readonly struct LineToken
-{
-	public string Text { get; init; }
-	public TokenType Type { get; init; }
-	public int StartIndex { get; init; }
-	public int Length => Text.Length;
-}
-
-/// <summary>
 /// Advanced line editor with cursor navigation, history, and syntax highlighting.
 /// </summary>
-public class LineEditor
+/// <remarks>
+/// Creates a new line editor with specified I/O.
+/// </remarks>
+/// <param name="io">Terminal I/O implementation.</param>
+/// <param name="palette">Color palette for syntax highlighting.</param>
+/// <param name="commandProvider">Optional command specification provider for tab completion.</param>
+/// <param name="pathProvider">Optional path provider for tab completion.</param>
+public class LineEditor(ITerminalIO io, ColorPalette? palette = null, ICommandSpecificationProvider? commandProvider = null, IPathProvider? pathProvider = null) : IDisposable
 {
-	private readonly int _inputFd = 0;
-	private readonly int _outputFd = 1;
-	private readonly byte[] _readBuffer = new byte[16];
 	private readonly List<string> _history = [];
 	private int _historyIndex = -1;
 	private readonly StringBuilder _currentLine = new();
 	private int _cursorPosition;
 	private string _savedLine = string.Empty;
-	private readonly ColorPalette _palette;
-	private readonly Func<string, bool>? _commandValidator;
+	private readonly ColorPalette _palette = palette ?? ColorPalette.CreateDefaultDark();
+	private readonly IPathProvider? _pathProvider = pathProvider;
+	private readonly TabCompleter? _tabCompleter = pathProvider != null ? new TabCompleter(pathProvider, commandProvider) : null;
 	private int _promptLength;
+	private bool _disposed;
+	private Func<string, bool>? _lineValidator;
 
 	/// <summary>
 	/// Maximum history size.
@@ -43,14 +40,24 @@ public class LineEditor
 	public ColorPalette Palette => _palette;
 
 	/// <summary>
-	/// Creates a new line editor.
+	/// Sets a validator function that determines if the line is valid for submission.
+	/// If the validator returns false, the line will flash and Enter will be blocked.
+	/// </summary>
+	public Func<string, bool>? LineValidator
+	{
+		get => _lineValidator;
+		set => _lineValidator = value;
+	}
+
+	/// <summary>
+	/// Creates a new line editor with default I/O.
 	/// </summary>
 	/// <param name="palette">Color palette for syntax highlighting.</param>
-	/// <param name="commandValidator">Optional function to validate if a command exists.</param>
-	public LineEditor(ColorPalette? palette = null, Func<string, bool>? commandValidator = null)
+	/// <param name="commandProvider">Optional command specification provider for tab completion.</param>
+	/// <param name="pathProvider">Optional path provider for tab completion.</param>
+	public LineEditor(ColorPalette? palette = null, ICommandSpecificationProvider? commandProvider = null, IPathProvider? pathProvider = null)
+		: this(TerminalIOFactory.Create(), palette, commandProvider, pathProvider)
 	{
-		_palette = palette ?? ColorPalette.CreateDefaultDark();
-		_commandValidator = commandValidator;
 	}
 
 	/// <summary>
@@ -65,133 +72,130 @@ public class LineEditor
 		_historyIndex = _history.Count;
 		_savedLine = string.Empty;
 
-		var handle = GCHandle.Alloc(_readBuffer, GCHandleType.Pinned);
-		try
+		while (true)
 		{
-			while (true)
+			var key = ReadKey();
+
+			switch (key.Type)
 			{
-				var key = ReadKey(handle);
+				case KeyType.Enter:
+					var currentText = _currentLine.ToString();
 
-				switch (key.Type)
-				{
-					case KeyType.Enter:
-						Write("\n");
-						var result = _currentLine.ToString();
-						AddToHistory(result);
-						return result;
+					// If there's a validator and the line is not valid, flash and reject
+					if (_lineValidator != null && !string.IsNullOrWhiteSpace(currentText) && !_lineValidator(currentText))
+					{
+						FlashLine();
+						break;
+					}
 
-					case KeyType.Ctrl_C:
-						Write("^C\n");
+					Write("\n");
+					AddToHistory(currentText);
+					return currentText;
+
+				case KeyType.Ctrl_C:
+					Write("^C\n");
+					return null;
+
+				case KeyType.Ctrl_D:
+					if (_currentLine.Length == 0)
+					{
 						return null;
+					}
+					// Delete character at cursor (like delete key)
+					DeleteCharAtCursor();
+					break;
 
-					case KeyType.Ctrl_D:
-						if (_currentLine.Length == 0)
-						{
-							return null;
-						}
-						// Delete character at cursor (like delete key)
-						DeleteCharAtCursor();
-						break;
+				case KeyType.Backspace:
+					_tabCompleter?.Reset();
+					if (_cursorPosition > 0)
+					{
+						_cursorPosition--;
+						_currentLine.Remove(_cursorPosition, 1);
+						RedrawLine();
+					}
+					break;
 
-					case KeyType.Backspace:
-						if (_cursorPosition > 0)
-						{
-							_cursorPosition--;
-							_currentLine.Remove(_cursorPosition, 1);
-							RedrawLine();
-						}
-						break;
+				case KeyType.Delete:
+					DeleteCharAtCursor();
+					break;
 
-					case KeyType.Delete:
-						DeleteCharAtCursor();
-						break;
-
-					case KeyType.Left:
-						if (_cursorPosition > 0)
-						{
-							_cursorPosition--;
-							MoveCursorTo(_cursorPosition);
-						}
-						break;
-
-					case KeyType.Right:
-						if (_cursorPosition < _currentLine.Length)
-						{
-							_cursorPosition++;
-							MoveCursorTo(_cursorPosition);
-						}
-						break;
-
-					case KeyType.Up:
-						NavigateHistory(-1);
-						break;
-
-					case KeyType.Down:
-						NavigateHistory(1);
-						break;
-
-					case KeyType.Home:
-					case KeyType.Ctrl_A:
-						_cursorPosition = 0;
-						MoveCursorTo(0);
-						break;
-
-					case KeyType.End:
-					case KeyType.Ctrl_E:
-						_cursorPosition = _currentLine.Length;
+				case KeyType.Left:
+					if (_cursorPosition > 0)
+					{
+						_cursorPosition--;
 						MoveCursorTo(_cursorPosition);
-						break;
+					}
+					break;
 
-					case KeyType.Ctrl_Left:
-						MoveWordLeft();
-						break;
+				case KeyType.Right:
+					if (_cursorPosition < _currentLine.Length)
+					{
+						_cursorPosition++;
+						MoveCursorTo(_cursorPosition);
+					}
+					break;
 
-					case KeyType.Ctrl_Right:
-						MoveWordRight();
-						break;
+				case KeyType.Up:
+					NavigateHistory(-1);
+					break;
 
-					case KeyType.Ctrl_U:
-						// Clear line before cursor
-						_currentLine.Remove(0, _cursorPosition);
-						_cursorPosition = 0;
-						RedrawLine();
-						break;
+				case KeyType.Down:
+					NavigateHistory(1);
+					break;
 
-					case KeyType.Ctrl_K:
-						// Clear line after cursor
-						_currentLine.Length = _cursorPosition;
-						RedrawLine();
-						break;
+				case KeyType.Home:
+				case KeyType.Ctrl_A:
+					_cursorPosition = 0;
+					MoveCursorTo(0);
+					break;
 
-					case KeyType.Ctrl_W:
-						// Delete word before cursor
-						DeleteWordBackward();
-						break;
+				case KeyType.End:
+				case KeyType.Ctrl_E:
+					_cursorPosition = _currentLine.Length;
+					MoveCursorTo(_cursorPosition);
+					break;
 
-					case KeyType.Ctrl_L:
-						// Clear screen and redraw
-						Write(AnsiColors.ClearScreen + AnsiColors.CursorHome);
-						// Caller should redraw prompt
-						return "\x0C"; // Special return value for clear screen
+				case KeyType.Ctrl_Left:
+					MoveWordLeft();
+					break;
 
-					case KeyType.Tab:
-						// Tab completion (placeholder for future)
-						// For now, insert spaces
-						InsertChar(' ');
-						InsertChar(' ');
-						InsertChar(' ');
-						InsertChar(' ');
-						break;
+				case KeyType.Ctrl_Right:
+					MoveWordRight();
+					break;
 
-					case KeyType.Char when key.Character >= ' ':
-						InsertChar(key.Character);
-						break;
-				}
+				case KeyType.Ctrl_U:
+					// Clear line before cursor
+					_currentLine.Remove(0, _cursorPosition);
+					_cursorPosition = 0;
+					RedrawLine();
+					break;
+
+				case KeyType.Ctrl_K:
+					// Clear line after cursor
+					_currentLine.Length = _cursorPosition;
+					RedrawLine();
+					break;
+
+				case KeyType.Ctrl_W:
+					// Delete word before cursor
+					DeleteWordBackward();
+					break;
+
+				case KeyType.Ctrl_L:
+					// Clear screen and redraw
+					Write(AnsiColors.ClearScreen + AnsiColors.CursorHome);
+					// Caller should redraw prompt
+					return "\x0C"; // Special return value for clear screen
+
+				case KeyType.Tab:
+					// Tab completion
+					HandleTabCompletion();
+					break;
+
+				case KeyType.Char when key.Character >= ' ':
+					InsertChar(key.Character);
+					break;
 			}
-		}
-		finally
-		{
-			handle.Free();
 		}
 	}
 
@@ -200,9 +204,36 @@ public class LineEditor
 	/// </summary>
 	private void InsertChar(char c)
 	{
+		_tabCompleter?.Reset();
 		_currentLine.Insert(_cursorPosition, c);
 		_cursorPosition++;
 		RedrawLine();
+	}
+
+	/// <summary>
+	/// Handle tab completion.
+	/// </summary>
+	private void HandleTabCompletion()
+	{
+		if (_tabCompleter == null)
+		{
+			// No tab completer available, insert spaces as fallback
+			InsertChar(' ');
+			InsertChar(' ');
+			InsertChar(' ');
+			InsertChar(' ');
+			return;
+		}
+
+		var result = _tabCompleter.Complete(_currentLine.ToString(), _cursorPosition);
+
+		if (result.Applied)
+		{
+			_currentLine.Clear();
+			_currentLine.Append(result.NewText);
+			_cursorPosition = result.NewCursorPosition;
+			RedrawLine();
+		}
 	}
 
 	/// <summary>
@@ -210,6 +241,7 @@ public class LineEditor
 	/// </summary>
 	private void DeleteCharAtCursor()
 	{
+		_tabCompleter?.Reset();
 		if (_cursorPosition < _currentLine.Length)
 		{
 			_currentLine.Remove(_cursorPosition, 1);
@@ -274,6 +306,7 @@ public class LineEditor
 	/// </summary>
 	private void DeleteWordBackward()
 	{
+		_tabCompleter?.Reset();
 		if (_cursorPosition == 0) return;
 
 		var line = _currentLine.ToString();
@@ -374,6 +407,28 @@ public class LineEditor
 	public IReadOnlyList<string> History => _history;
 
 	/// <summary>
+	/// Flash the line to indicate an error (e.g., invalid command).
+	/// </summary>
+	private void FlashLine()
+	{
+		// Save current line content
+		var line = _currentLine.ToString();
+
+		// Flash with red background
+		Write($"\x1b[{_promptLength + 1}G"); // Move to start of line
+		Write(AnsiColors.ClearLine.Replace("2K", "K")); // Clear line
+		Write("\x1b[41m"); // Red background
+		Write(line);
+		Write(AnsiColors.Reset);
+
+		// Brief pause
+		Thread.Sleep(100);
+
+		// Restore normal display
+		RedrawLine();
+	}
+
+	/// <summary>
 	/// Redraw the entire line with syntax highlighting.
 	/// </summary>
 	private void RedrawLine()
@@ -428,6 +483,16 @@ public class LineEditor
 	}
 
 	/// <summary>
+	/// Tokenize a line and return the tokens for external validation.
+	/// </summary>
+	/// <param name="line">The line to tokenize.</param>
+	/// <returns>List of tokens with their types.</returns>
+	public IReadOnlyList<LineToken> TokenizeLine(string line)
+	{
+		return Tokenize(line);
+	}
+
+	/// <summary>
 	/// Tokenize the input line for syntax highlighting.
 	/// </summary>
 	private List<LineToken> Tokenize(string line)
@@ -435,6 +500,8 @@ public class LineEditor
 		var tokens = new List<LineToken>();
 		var index = 0;
 		var isFirstToken = true;
+		string? currentCommand = null;
+		var positionalArgIndex = 0;
 
 		while (index < line.Length)
 		{
@@ -495,6 +562,7 @@ public class LineEditor
 					StartIndex = start
 				});
 				isFirstToken = false;
+				positionalArgIndex++;
 				continue;
 			}
 
@@ -509,6 +577,8 @@ public class LineEditor
 				});
 				index++;
 				isFirstToken = true; // Next token is a command
+				currentCommand = null;
+				positionalArgIndex = 0;
 				continue;
 			}
 
@@ -563,7 +633,7 @@ public class LineEditor
 				}
 
 				var word = line[start..index];
-				var tokenType = ClassifyToken(word, isFirstToken);
+				var tokenType = ClassifyToken(word, isFirstToken, currentCommand, positionalArgIndex);
 
 				tokens.Add(new LineToken
 				{
@@ -571,6 +641,16 @@ public class LineEditor
 					Type = tokenType,
 					StartIndex = start
 				});
+
+				if (isFirstToken)
+				{
+					currentCommand = word;
+				}
+				else if (!word.StartsWith('-'))
+				{
+					// Only count non-flag arguments as positional
+					positionalArgIndex++;
+				}
 				isFirstToken = false;
 			}
 		}
@@ -581,14 +661,14 @@ public class LineEditor
 	/// <summary>
 	/// Classify a token to determine its type for highlighting.
 	/// </summary>
-	private TokenType ClassifyToken(string token, bool isCommand)
+	private TokenType ClassifyToken(string token, bool isCommand, string? commandName, int positionalIndex)
 	{
 		if (isCommand)
 		{
 			// Check if command exists
-			if (_commandValidator != null)
+			if (commandProvider != null)
 			{
-				return _commandValidator(token) ? TokenType.ValidCommand : TokenType.InvalidCommand;
+				return commandProvider.CommandExists(token) ? TokenType.ValidCommand : TokenType.InvalidCommand;
 			}
 			return TokenType.Command;
 		}
@@ -602,7 +682,7 @@ public class LineEditor
 		// Check for paths
 		if (token.Contains('/') || token.Contains('\\') || token == "." || token == "..")
 		{
-			return TokenType.Path;
+			return ClassifyPathToken(token, commandName, positionalIndex);
 		}
 
 		// Check for numbers
@@ -615,53 +695,124 @@ public class LineEditor
 	}
 
 	/// <summary>
+	/// Classify a path token, checking if it must exist based on command specification.
+	/// </summary>
+	private TokenType ClassifyPathToken(string path, string? commandName, int positionalIndex)
+	{
+		// If we don't have the necessary context, just return Path
+		if (_pathProvider == null || commandProvider == null || commandName == null)
+		{
+			return TokenType.Path;
+		}
+
+		var spec = commandProvider.GetSpecification(commandName);
+		if (spec?.Options == null)
+		{
+			return TokenType.Path;
+		}
+
+		// Find the option spec for this positional argument
+		var positionalOptions = spec.Options
+			.Where(o => o.IsPositional)
+			.OrderBy(o => o.Position)
+			.ToList();
+
+		if (positionalIndex >= positionalOptions.Count)
+		{
+			return TokenType.Path;
+		}
+
+		var optionSpec = positionalOptions[positionalIndex];
+
+		// Check if path must exist based on spec type
+		var resolvedPath = ResolvePath(path);
+
+		return optionSpec switch
+		{
+			DirectoryOptionSpec dirSpec when dirSpec.MustExist =>
+				_pathProvider.DirectoryExists(resolvedPath) ? TokenType.Path : TokenType.InvalidPath,
+			FileOptionSpec fileSpec when fileSpec.MustExist =>
+				_pathProvider.FileExists(resolvedPath) ? TokenType.Path : TokenType.InvalidPath,
+			_ => TokenType.Path
+		};
+	}
+
+	/// <summary>
+	/// Resolve a path relative to the current directory.
+	/// </summary>
+	private string ResolvePath(string path)
+	{
+		if (_pathProvider == null)
+		{
+			return path;
+		}
+
+		// Normalize path separators
+		var normalizedPath = path.Replace('\\', '/');
+
+		if (Path.IsPathRooted(normalizedPath) || normalizedPath.StartsWith('/'))
+		{
+			return normalizedPath;
+		}
+
+		return _pathProvider.Combine(_pathProvider.GetCurrentDirectory(), normalizedPath);
+	}
+
+	/// <summary>
 	/// Read a key from input.
 	/// </summary>
-	private KeyInput ReadKey(GCHandle handle)
+	private KeyInput ReadKey()
 	{
-		var bytesRead = Syscalls.read(_inputFd, handle.AddrOfPinnedObject(), 1);
-		if (bytesRead <= 0)
+		var c = io.ReadByte();
+		if (c < 0)
 		{
 			return KeyInput.Ctrl_D;
 		}
-
-		var c = _readBuffer[0];
 
 		// Handle escape sequences
 		if (c == 0x1B) // ESC
 		{
 			// Try to read more bytes for escape sequence
-			bytesRead = Syscalls.read(_inputFd, handle.AddrOfPinnedObject(), 2);
+			var b1 = io.ReadByte();
+			if (b1 < 0) return KeyInput.Escape;
 
-			if (bytesRead >= 2 && _readBuffer[0] == '[')
+			if (b1 == '[')
 			{
-				switch (_readBuffer[1])
+				var b2 = io.ReadByte();
+				if (b2 < 0) return KeyInput.Escape;
+
+				switch (b2)
 				{
-					case (byte)'A': return KeyInput.Up;
-					case (byte)'B': return KeyInput.Down;
-					case (byte)'C': return KeyInput.Right;
-					case (byte)'D': return KeyInput.Left;
-					case (byte)'H': return KeyInput.Home;
-					case (byte)'F': return KeyInput.End;
-					case (byte)'3':
+					case 'A': return KeyInput.Up;
+					case 'B': return KeyInput.Down;
+					case 'C': return KeyInput.Right;
+					case 'D': return KeyInput.Left;
+					case 'H': return KeyInput.Home;
+					case 'F': return KeyInput.End;
+					case '3':
 						// Might be delete key (ESC[3~)
-						Syscalls.read(_inputFd, handle.AddrOfPinnedObject(), 1);
-						if (_readBuffer[0] == '~')
+						var b3 = io.ReadByte();
+						if (b3 == '~')
 						{
 							return KeyInput.Delete;
 						}
 						return KeyInput.Unknown;
-					case (byte)'1':
+					case '1':
 						// Extended sequences like ESC[1;5C (Ctrl+Right)
-						bytesRead = Syscalls.read(_inputFd, handle.AddrOfPinnedObject(), 3);
-						if (bytesRead >= 2 && _readBuffer[0] == ';' && _readBuffer[1] == '5')
+						var semi = io.ReadByte();
+						if (semi == ';')
 						{
-							return _readBuffer[2] switch
+							var mod = io.ReadByte();
+							if (mod == '5')
 							{
-								(byte)'C' => KeyInput.Ctrl_Right,
-								(byte)'D' => KeyInput.Ctrl_Left,
-								_ => KeyInput.Unknown
-							};
+								var dir = io.ReadByte();
+								return dir switch
+								{
+									'C' => KeyInput.Ctrl_Right,
+									'D' => KeyInput.Ctrl_Left,
+									_ => KeyInput.Unknown
+								};
+							}
 						}
 						return KeyInput.Unknown;
 				}
@@ -693,78 +844,17 @@ public class LineEditor
 	/// </summary>
 	private void Write(string text)
 	{
-		var bytes = Encoding.UTF8.GetBytes(text);
-		var handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
-		try
-		{
-			Syscalls.write(_outputFd, handle.AddrOfPinnedObject(), bytes.Length);
-		}
-		finally
-		{
-			handle.Free();
-		}
+		io.Write(text);
 	}
-}
 
-/// <summary>
-/// Represents a key input.
-/// </summary>
-public readonly record struct KeyInput
-{
-	public KeyType Type { get; init; }
-	public char Character { get; init; }
-
-	public static readonly KeyInput Unknown = new() { Type = KeyType.Unknown };
-	public static readonly KeyInput Enter = new() { Type = KeyType.Enter };
-	public static readonly KeyInput Backspace = new() { Type = KeyType.Backspace };
-	public static readonly KeyInput Delete = new() { Type = KeyType.Delete };
-	public static readonly KeyInput Tab = new() { Type = KeyType.Tab };
-	public static readonly KeyInput Escape = new() { Type = KeyType.Escape };
-	public static readonly KeyInput Up = new() { Type = KeyType.Up };
-	public static readonly KeyInput Down = new() { Type = KeyType.Down };
-	public static readonly KeyInput Left = new() { Type = KeyType.Left };
-	public static readonly KeyInput Right = new() { Type = KeyType.Right };
-	public static readonly KeyInput Home = new() { Type = KeyType.Home };
-	public static readonly KeyInput End = new() { Type = KeyType.End };
-	public static readonly KeyInput Ctrl_A = new() { Type = KeyType.Ctrl_A };
-	public static readonly KeyInput Ctrl_C = new() { Type = KeyType.Ctrl_C };
-	public static readonly KeyInput Ctrl_D = new() { Type = KeyType.Ctrl_D };
-	public static readonly KeyInput Ctrl_E = new() { Type = KeyType.Ctrl_E };
-	public static readonly KeyInput Ctrl_K = new() { Type = KeyType.Ctrl_K };
-	public static readonly KeyInput Ctrl_L = new() { Type = KeyType.Ctrl_L };
-	public static readonly KeyInput Ctrl_U = new() { Type = KeyType.Ctrl_U };
-	public static readonly KeyInput Ctrl_W = new() { Type = KeyType.Ctrl_W };
-	public static readonly KeyInput Ctrl_Left = new() { Type = KeyType.Ctrl_Left };
-	public static readonly KeyInput Ctrl_Right = new() { Type = KeyType.Ctrl_Right };
-	public static readonly KeyInput Char = new() { Type = KeyType.Char };
-}
-
-/// <summary>
-/// Key types for input handling.
-/// </summary>
-public enum KeyType
-{
-	Unknown,
-	Char,
-	Enter,
-	Backspace,
-	Delete,
-	Tab,
-	Escape,
-	Up,
-	Down,
-	Left,
-	Right,
-	Home,
-	End,
-	Ctrl_A,
-	Ctrl_C,
-	Ctrl_D,
-	Ctrl_E,
-	Ctrl_K,
-	Ctrl_L,
-	Ctrl_U,
-	Ctrl_W,
-	Ctrl_Left,
-	Ctrl_Right
+	/// <summary>
+	/// Dispose of resources.
+	/// </summary>
+	public void Dispose()
+	{
+		if (_disposed) return;
+		_disposed = true;
+		io.Dispose();
+		GC.SuppressFinalize(this);
+	}
 }

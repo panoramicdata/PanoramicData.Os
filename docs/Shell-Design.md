@@ -405,27 +405,126 @@ Traditional stdout/stderr do not exist. Instead:
 
 ## Built-in Commands
 
+### LINQ Query Operators
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `where "predicate"` | Filter stream by C# predicate | `where x => x.Size > 1024` |
+| `select "projection"` | Project to new type | `select x => { x.Name, x.Size }` |
+| `orderBy "keySelector"` | Sort ascending | `orderBy x => x.Name` |
+| `orderBy "keySelector" desc` | Sort descending | `orderBy x => x.Size desc` |
+| `take n` | Take first n items | `take 10` |
+| `skip n` | Skip first n items | `skip 5` |
+| `distinct` | Remove duplicates | `distinct` |
+| `groupBy "keySelector"` | Group by key | `groupBy x => x.Extension` |
+| `first` | Take first item | `first` |
+| `last` | Take last item | `last` |
+| `count` | Count items | `count` |
+| `any "predicate"` | Check if any match | `any x => x.Size > 0` |
+| `all "predicate"` | Check if all match | `all x => x.IsReadable` |
+
 ### Stream Utilities
 
 | Command | Description |
 |---------|-------------|
 | `tabulate` | Render `ObjectStream<T>` as formatted table |
 | `blackhole` | Consume and discard `ObjectStream<T>` |
-| `tee` | Duplicate stream to multiple destinations |
-| `route` | Route named streams to different destinations |
-| `merge` | Combine multiple streams into one |
+| `tee @streamName` | Split stream to named destination |
+| `merge @stream1 @stream2` | Combine multiple streams into one |
 
-### Generic Data Commands
+### Output Type Selection
 
-| Command | Description |
-|---------|-------------|
-| `filter "predicate"` | Filter `ObjectStream<T>` by C# predicate |
-| `sort "keySelector"` | Sort `ObjectStream<T>` by key |
-| `select "projection"` | Transform `ObjectStream<T>` to `ObjectStream<U>` |
-| `take n` | Take first n items |
-| `skip n` | Skip first n items |
-| `distinct` | Remove duplicates |
-| `count` | Count items in stream |
+Commands can specify their output type using `--as`:
+
+```bash
+cat file.txt                    # Default: TextLine
+cat --as=char file.txt          # Character stream
+cat --as=TextChunk file.txt     # Chunked with metadata
+
+ls                              # Default: FileSystemEntry
+ls --as=string                  # Just names as strings
+```
+
+Commands declare supported output types in their specification:
+
+```csharp
+OutputTypes = [
+    typeof(TextLine),      // Default (first in list)
+    typeof(TextChunk),
+    typeof(char)
+],
+```
+
+---
+
+## Stream Splitting with Tee
+
+The `tee` command splits a stream to a named destination while continuing the main pipeline:
+
+```bash
+# Single line - split to visualizer, continue to main output
+http --as=AudioStream url | tee @audio | mixer --volume=50%
+
+# Named stream can be consumed elsewhere
+@audio | visualizer --type=spectrum
+
+# Multi-line for readability
+http --as=AudioStream url 
+    | tee @forRecording
+    | mixer --volume=50%;
+@forRecording | save recording.wav
+```
+
+Named streams use `@name` syntax and are scoped to the current command block.
+
+---
+
+## LINQ Pipeline with IAsyncQueryable
+
+The shell supports full C# LINQ method syntax with `IAsyncQueryable` propagation:
+
+```bash
+# Simple projection
+ls | select x => x.Name
+
+# Anonymous type projection  
+ls | select x => { x.Name, x.Size, IsLarge: x.Size > 1000000 }
+
+# Full query pipeline
+ls | where x => x.Extension == ".cs" 
+   | select x => { x.Name, x.Size } 
+   | orderBy x => x.Size desc 
+   | take 10
+
+# Aggregation
+ls | groupBy x => x.Extension 
+   | select g => { Extension: g.Key, Count: g.Count(), TotalSize: g.Sum(f => f.Size) }
+```
+
+### Type Inference
+
+Type inference flows through the pipeline:
+1. Command output type determined by `--as` flag or default
+2. Each LINQ operator infers `x` type from upstream
+3. Tab-completion works inside lambdas based on inferred type
+
+```bash
+ls | select x => x.<TAB>
+#                  ↑ shows: Name, Size, Extension, Created, Modified, etc.
+```
+
+### Query Provider Benefits
+
+For data sources implementing `IAsyncQueryable`, expressions can be pushed to the source:
+
+```bash
+# Could translate to SQL/OData query on server
+db.Users | where x => x.Age > 21 | select x => x.Name | take 100
+```
+
+---
+
+## Built-in Commands
 
 ---
 
@@ -465,19 +564,65 @@ analyze data.csv | [summary] > report.txt, [details] | blackhole
 
 | Component | Status |
 |-----------|--------|
-| `ShellCommandSpecification` | � Implemented |
+| `ShellCommandSpecification` | 🟢 Implemented |
 | `OptionSpec<T>` | 🟢 Implemented |
 | `StreamSpec<T>` | 🟢 Implemented |
 | `ExitCodeSpec` | 🟢 Implemented |
 | Standard exit codes | 🟢 Implemented |
 | Command specs on all commands | 🟢 Implemented |
-| Pipeline type validation | 🔴 Not started |
-| C# expression parsing | 🔴 Not started |
-| Live visual feedback | 🔴 Not started |
+| Tab completion with rotation | 🟢 Implemented |
+| Context-aware path completion | 🟢 Implemented |
+| Invalid path highlighting | 🟢 Implemented |
+| Line validation with flash | 🟢 Implemented |
+| Cross-platform path resolution | 🟢 Implemented |
+| Pipeline type validation | 🟡 In Progress |
+| `IAsyncEnumerable<T>` streaming | 🟡 In Progress |
+| C# expression parsing (Roslyn) | 🔴 Not started |
+| Live visual feedback | 🟡 Partial |
 | `ObjectStream<T>` serialization | 🔴 Not started |
-| Built-in stream commands | 🔴 Not started |
+| Built-in LINQ commands | 🔴 Not started |
+| Tee/named streams | 🔴 Not started |
+| Formatter registry | 🔴 Not started |
 
 ---
 
-*Document version: 1.1*  
+## Streaming Implementation Plan
+
+### Phase 1: Core Infrastructure (Current)
+
+**Goal**: Commands yield typed objects instead of writing to console.
+
+1. Add `IStreamObject` base interface to `PanoramicData.Os.CommandLine`
+2. Create core stream types: `TextLine`, `TextChunk`, `FileSystemEntry`
+3. Update `CommandExecutionContext` to support object output
+4. Add `OutputTypes` property to `ShellCommandSpecification`
+5. Implement channel-based pipeline executor with backpressure
+6. Create default console formatter
+
+**Commands to update**:
+- `ls` → yields `IAsyncEnumerable<FileSystemEntry>`
+- `cat` → yields `IAsyncEnumerable<TextLine>` (default), supports `--as=char|TextChunk`
+
+### Phase 2: LINQ Operators
+
+**Goal**: Basic query operators with type checking.
+
+1. Add Roslyn NuGet packages for expression parsing
+2. Implement expression parser for lambdas
+3. Create `where`, `select`, `orderBy`, `take`, `skip` commands
+4. Pipeline type validation at parse time
+5. Tab completion inside lambda expressions
+
+### Phase 3: Advanced Features
+
+**Goal**: Full streaming capabilities.
+
+1. `tee` command with named streams (`@name` syntax)
+2. `groupBy` and aggregation operators
+3. Formatter/visualizer registry
+4. Terminal capability detection
+
+---
+
+*Document version: 1.2*  
 *Last updated: December 28, 2025*

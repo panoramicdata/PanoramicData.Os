@@ -164,24 +164,17 @@ public abstract class ShellCommand : PanCommand, ICommand
 /// <summary>
 /// Console implementation that wraps the Terminal for command execution.
 /// </summary>
-internal sealed class ShellConsole : IConsole
+internal sealed class ShellConsole(Terminal terminal) : IConsole
 {
-	private readonly Terminal _terminal;
+	public void Write(string text) => terminal.Write(text);
 
-	public ShellConsole(Terminal terminal)
-	{
-		_terminal = terminal;
-	}
-
-	public void Write(string text) => _terminal.Write(text);
-
-	public void WriteLine(string text = "") => _terminal.WriteLine(text);
+	public void WriteLine(string text = "") => terminal.WriteLine(text);
 
 	public void WriteColored(string text, Color color)
 	{
 		// Map Spectre.Console Color to ANSI
 		var ansi = MapColor(color);
-		_terminal.WriteColored(text, ansi);
+		terminal.WriteColored(text, ansi);
 	}
 
 	public void WriteLineColored(string text, Color color)
@@ -192,29 +185,29 @@ internal sealed class ShellConsole : IConsole
 
 	public void WriteError(string message)
 	{
-		_terminal.WriteColored(message, AnsiColors.Red);
+		terminal.WriteColored(message, AnsiColors.Red);
 		WriteLine();
 	}
 
 	public void WriteWarning(string message)
 	{
-		_terminal.WriteColored(message, AnsiColors.Yellow);
+		terminal.WriteColored(message, AnsiColors.Yellow);
 		WriteLine();
 	}
 
 	public void WriteSuccess(string message)
 	{
-		_terminal.WriteColored(message, AnsiColors.Green);
+		terminal.WriteColored(message, AnsiColors.Green);
 		WriteLine();
 	}
 
 	public void WriteInfo(string message)
 	{
-		_terminal.WriteColored(message, AnsiColors.Cyan);
+		terminal.WriteColored(message, AnsiColors.Cyan);
 		WriteLine();
 	}
 
-	public string? ReadLine() => _terminal.ReadLine();
+	public string? ReadLine() => terminal.ReadLine();
 
 	public ConsoleKeyInfo ReadKey(bool intercept = false)
 	{
@@ -222,7 +215,7 @@ internal sealed class ShellConsole : IConsole
 		return new ConsoleKeyInfo('\0', ConsoleKey.Enter, false, false, false);
 	}
 
-	public void Clear() => _terminal.Clear();
+	public void Clear() => terminal.Clear();
 
 	public IAnsiConsole AnsiConsole => Spectre.Console.AnsiConsole.Console;
 

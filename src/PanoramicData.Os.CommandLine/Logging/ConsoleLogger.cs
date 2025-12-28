@@ -6,28 +6,18 @@ namespace PanoramicData.Os.CommandLine.Logging;
 /// Console logger that writes to standard output with colored output.
 /// Designed for PanoramicData.Os where we may not have a full logging infrastructure.
 /// </summary>
-public class ConsoleLogger : ILogger
+/// <remarks>
+/// Create a new console logger.
+/// </remarks>
+public class ConsoleLogger(string categoryName, LogLevel minimumLevel = LogLevel.Information, Action<string>? writeAction = null) : ILogger
 {
-	private readonly string _categoryName;
-	private readonly LogLevel _minimumLevel;
-	private readonly Action<string>? _writeAction;
 	private static readonly object _lock = new();
-
-	/// <summary>
-	/// Create a new console logger.
-	/// </summary>
-	public ConsoleLogger(string categoryName, LogLevel minimumLevel = LogLevel.Information, Action<string>? writeAction = null)
-	{
-		_categoryName = categoryName;
-		_minimumLevel = minimumLevel;
-		_writeAction = writeAction;
-	}
 
 	/// <inheritdoc />
 	public IDisposable? BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
 
 	/// <inheritdoc />
-	public bool IsEnabled(LogLevel logLevel) => logLevel >= _minimumLevel;
+	public bool IsEnabled(LogLevel logLevel) => logLevel >= minimumLevel;
 
 	/// <inheritdoc />
 	public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
@@ -43,7 +33,7 @@ public class ConsoleLogger : ILogger
 		var colorCode = GetLevelColor(logLevel);
 		var resetCode = "\x1b[0m";
 
-		var formattedMessage = $"[{timestamp}] {colorCode}[{levelStr}]{resetCode} [{GetShortCategoryName(_categoryName)}] {message}";
+		var formattedMessage = $"[{timestamp}] {colorCode}[{levelStr}]{resetCode} [{GetShortCategoryName(categoryName)}] {message}";
 
 		if (exception != null)
 		{
@@ -52,9 +42,9 @@ public class ConsoleLogger : ILogger
 
 		lock (_lock)
 		{
-			if (_writeAction != null)
+			if (writeAction != null)
 			{
-				_writeAction(formattedMessage);
+				writeAction(formattedMessage);
 			}
 			else
 			{
@@ -101,24 +91,16 @@ public class ConsoleLogger : ILogger
 /// <summary>
 /// Factory for creating console loggers.
 /// </summary>
-public class ConsoleLoggerProvider : ILoggerProvider
+/// <remarks>
+/// Create a new console logger provider.
+/// </remarks>
+public class ConsoleLoggerProvider(LogLevel minimumLevel = LogLevel.Information, Action<string>? writeAction = null) : ILoggerProvider
 {
-	private readonly LogLevel _minimumLevel;
-	private readonly Action<string>? _writeAction;
-
-	/// <summary>
-	/// Create a new console logger provider.
-	/// </summary>
-	public ConsoleLoggerProvider(LogLevel minimumLevel = LogLevel.Information, Action<string>? writeAction = null)
-	{
-		_minimumLevel = minimumLevel;
-		_writeAction = writeAction;
-	}
 
 	/// <inheritdoc />
 	public ILogger CreateLogger(string categoryName)
 	{
-		return new ConsoleLogger(categoryName, _minimumLevel, _writeAction);
+		return new ConsoleLogger(categoryName, minimumLevel, writeAction);
 	}
 
 	/// <inheritdoc />

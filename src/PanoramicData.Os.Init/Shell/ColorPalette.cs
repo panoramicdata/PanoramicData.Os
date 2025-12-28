@@ -4,84 +4,6 @@ using System.Text.Json.Serialization;
 namespace PanoramicData.Os.Init.Shell;
 
 /// <summary>
-/// JSON serialization context for ColorPalette.
-/// </summary>
-[JsonSerializable(typeof(ColorPalette))]
-[JsonSourceGenerationOptions(WriteIndented = true)]
-internal partial class ColorPaletteJsonContext : JsonSerializerContext
-{
-}
-
-/// <summary>
-/// Token types for syntax highlighting.
-/// </summary>
-public enum TokenType
-{
-	/// <summary>Default text color.</summary>
-	Default,
-
-	/// <summary>Command name (first token).</summary>
-	Command,
-
-	/// <summary>Valid command that exists.</summary>
-	ValidCommand,
-
-	/// <summary>Invalid/unknown command.</summary>
-	InvalidCommand,
-
-	/// <summary>Command argument.</summary>
-	Argument,
-
-	/// <summary>Flag/option starting with - or --.</summary>
-	Flag,
-
-	/// <summary>String literal in quotes.</summary>
-	String,
-
-	/// <summary>Path (contains / or \).</summary>
-	Path,
-
-	/// <summary>Number.</summary>
-	Number,
-
-	/// <summary>Pipe operator |.</summary>
-	Pipe,
-
-	/// <summary>Redirect operators > >> <.</summary>
-	Redirect,
-
-	/// <summary>Environment variable $VAR.</summary>
-	Variable,
-
-	/// <summary>Comment starting with #.</summary>
-	Comment,
-
-	/// <summary>Error indicator.</summary>
-	Error,
-
-	/// <summary>Warning indicator.</summary>
-	Warning,
-
-	/// <summary>Success indicator.</summary>
-	Success,
-
-	/// <summary>Prompt username.</summary>
-	PromptUser,
-
-	/// <summary>Prompt hostname.</summary>
-	PromptHost,
-
-	/// <summary>Prompt separator characters.</summary>
-	PromptSeparator,
-
-	/// <summary>Prompt path.</summary>
-	PromptPath,
-
-	/// <summary>Prompt symbol ($, #, etc).</summary>
-	PromptSymbol
-}
-
-/// <summary>
 /// Color palette for shell syntax highlighting.
 /// </summary>
 public class ColorPalette
@@ -124,6 +46,7 @@ public class ColorPalette
 			TokenType.Flag => AnsiColors.BrightYellow,
 			TokenType.String => AnsiColors.BrightGreen,
 			TokenType.Path => AnsiColors.BrightBlue,
+			TokenType.InvalidPath => AnsiColors.Red + AnsiColors.Underline,
 			TokenType.Number => AnsiColors.BrightMagenta,
 			TokenType.Pipe => AnsiColors.BrightWhite + AnsiColors.Bold,
 			TokenType.Redirect => AnsiColors.BrightWhite + AnsiColors.Bold,
@@ -160,6 +83,7 @@ public class ColorPalette
 		palette.SetColor(TokenType.Flag, "\x1b[38;5;222m");              // Pastel yellow
 		palette.SetColor(TokenType.String, "\x1b[38;5;150m");            // Pastel green
 		palette.SetColor(TokenType.Path, "\x1b[38;5;111m");              // Pastel blue
+		palette.SetColor(TokenType.InvalidPath, "\x1b[38;5;196m\x1b[4m"); // Solid red + underline
 		palette.SetColor(TokenType.Number, "\x1b[38;5;183m");            // Pastel purple
 		palette.SetColor(TokenType.Pipe, "\x1b[38;5;255m\x1b[1m");       // Bright white bold
 		palette.SetColor(TokenType.Redirect, "\x1b[38;5;255m\x1b[1m");   // Bright white bold

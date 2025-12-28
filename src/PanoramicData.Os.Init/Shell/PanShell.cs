@@ -1,11 +1,13 @@
+using PanoramicData.Os.CommandLine.Specifications;
 using PanoramicData.Os.Init.Shell.Commands;
+using PanoramicData.Os.Init.Shell.Completion;
 
 namespace PanoramicData.Os.Init.Shell;
 
 /// <summary>
 /// PanoramicData.Os Shell - A simple command-line shell written in C#.
 /// </summary>
-public class PanShell : IDisposable
+public class PanShell : IDisposable, ICommandSpecificationProvider
 {
 	private readonly Terminal _terminal;
 	private readonly ShellContext _context;
@@ -20,7 +22,11 @@ public class PanShell : IDisposable
 		_context = new ShellContext();
 		_commands = new Dictionary<string, ICommand>(StringComparer.OrdinalIgnoreCase);
 		_palette = ColorPalette.CreateDefaultDark();
-		_lineEditor = new LineEditor(_palette, CommandExists);
+
+		// Create path provider that uses the shell context's current directory
+		var pathProvider = new FileSystemPathProvider(() => _context.CurrentDirectory);
+		_lineEditor = new LineEditor(_palette, this, pathProvider);
+		_lineEditor.LineValidator = ValidateLine;
 
 		// Subscribe to palette changes
 		PaletteCommand.PaletteChanged += OnPaletteChanged;
@@ -30,11 +36,35 @@ public class PanShell : IDisposable
 	}
 
 	/// <summary>
+	/// Validates a command line before execution.
+	/// Returns false if the line contains invalid paths or unknown commands.
+	/// </summary>
+	private bool ValidateLine(string line)
+	{
+		if (string.IsNullOrWhiteSpace(line))
+		{
+			return true;
+		}
+
+		// Check for invalid tokens using the line editor's tokenizer
+		var tokens = _lineEditor.TokenizeLine(line);
+		return !tokens.Any(t => t.Type == TokenType.InvalidPath);
+	}
+
+	/// <summary>
 	/// Check if a command exists.
 	/// </summary>
-	private bool CommandExists(string commandName)
+	public bool CommandExists(string commandName)
 	{
 		return _commands.ContainsKey(commandName);
+	}
+
+	/// <summary>
+	/// Get the specification for a command.
+	/// </summary>
+	public ShellCommandSpecification? GetSpecification(string commandName)
+	{
+		return _commands.TryGetValue(commandName, out var command) ? command.Specification : null;
 	}
 
 	/// <summary>
@@ -130,20 +160,35 @@ public class PanShell : IDisposable
 	/// </summary>
 	private void PrintBanner()
 	{
+		const int boxWidth = 60;
+		const int contentWidth = boxWidth - 4; // Account for "║  " and "  ║"
+
+		var title = "PanoramicData.Os Shell";
+		var version = $"Powered by .NET {Environment.Version}";
+		var help = "Type 'help' for available commands";
+
 		_terminal.WriteLine();
-		_terminal.WriteLineColored("╔════════════════════════════════════════════════════════════╗", AnsiColors.BrightCyan);
-		_terminal.WriteLineColored("║                                                            ║", AnsiColors.BrightCyan);
+		_terminal.WriteLineColored("╔" + new string('═', boxWidth) + "╗", AnsiColors.BrightCyan);
+		_terminal.WriteLineColored("║" + new string(' ', boxWidth) + "║", AnsiColors.BrightCyan);
+
+		// Title line
 		_terminal.Write(AnsiColors.BrightCyan + "║  ");
-		_terminal.WriteColored("PanoramicData.Os Shell", AnsiColors.BrightWhite + AnsiColors.Bold);
-		_terminal.WriteLineColored("                                  ║", AnsiColors.BrightCyan);
+		_terminal.WriteColored(title, AnsiColors.BrightWhite + AnsiColors.Bold);
+		_terminal.WriteLineColored(new string(' ', contentWidth - title.Length) + "  ║", AnsiColors.BrightCyan);
+
+		// Version line
 		_terminal.Write(AnsiColors.BrightCyan + "║  ");
-		_terminal.WriteColored($"Powered by .NET {Environment.Version}", AnsiColors.BrightGreen);
-		_terminal.WriteLineColored("                              ║", AnsiColors.BrightCyan);
-		_terminal.WriteLineColored("║                                                            ║", AnsiColors.BrightCyan);
+		_terminal.WriteColored(version, AnsiColors.BrightGreen);
+		_terminal.WriteLineColored(new string(' ', contentWidth - version.Length) + "  ║", AnsiColors.BrightCyan);
+
+		_terminal.WriteLineColored("║" + new string(' ', boxWidth) + "║", AnsiColors.BrightCyan);
+
+		// Help line
 		_terminal.Write(AnsiColors.BrightCyan + "║  ");
-		_terminal.WriteColored("Type 'help' for available commands", AnsiColors.Yellow);
-		_terminal.WriteLineColored("                      ║", AnsiColors.BrightCyan);
-		_terminal.WriteLineColored("╚════════════════════════════════════════════════════════════╝", AnsiColors.BrightCyan);
+		_terminal.WriteColored(help, AnsiColors.Yellow);
+		_terminal.WriteLineColored(new string(' ', contentWidth - help.Length) + "  ║", AnsiColors.BrightCyan);
+
+		_terminal.WriteLineColored("╚" + new string('═', boxWidth) + "╝", AnsiColors.BrightCyan);
 		_terminal.WriteLine();
 	}
 

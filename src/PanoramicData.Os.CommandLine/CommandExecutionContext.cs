@@ -6,57 +6,48 @@ namespace PanoramicData.Os.CommandLine;
 /// Context provided to commands during execution.
 /// Contains all the information and services a command needs.
 /// </summary>
-public sealed class CommandExecutionContext
+/// <remarks>
+/// Create a new command execution context.
+/// </remarks>
+public sealed class CommandExecutionContext(
+	IConsole console,
+	DirectoryInfo workingDirectory,
+	ILogger logger,
+	IDictionary<string, object?> parameters,
+	CancellationToken cancellationToken,
+	IDictionary<string, string>? environment = null)
 {
-	/// <summary>
-	/// Create a new command execution context.
-	/// </summary>
-	public CommandExecutionContext(
-		IConsole console,
-		DirectoryInfo workingDirectory,
-		ILogger logger,
-		IDictionary<string, object?> parameters,
-		CancellationToken cancellationToken,
-		IDictionary<string, string>? environment = null)
-	{
-		Console = console;
-		WorkingDirectory = workingDirectory;
-		Logger = logger;
-		Parameters = parameters;
-		CancellationToken = cancellationToken;
-		Environment = environment ?? new Dictionary<string, string>();
-	}
 
 	/// <summary>
 	/// The console for I/O operations.
 	/// </summary>
-	public IConsole Console { get; }
+	public IConsole Console { get; } = console;
 
 	/// <summary>
 	/// The current working directory.
 	/// </summary>
-	public DirectoryInfo WorkingDirectory { get; private set; }
+	public DirectoryInfo WorkingDirectory { get; private set; } = workingDirectory;
 
 	/// <summary>
 	/// The logger for this command execution.
 	/// </summary>
-	public ILogger Logger { get; }
+	public ILogger Logger { get; } = logger;
 
 	/// <summary>
 	/// Named parameters passed to the command.
 	/// These are parsed from command line arguments.
 	/// </summary>
-	public IDictionary<string, object?> Parameters { get; }
+	public IDictionary<string, object?> Parameters { get; } = parameters;
 
 	/// <summary>
 	/// Cancellation token for graceful shutdown.
 	/// </summary>
-	public CancellationToken CancellationToken { get; }
+	public CancellationToken CancellationToken { get; } = cancellationToken;
 
 	/// <summary>
 	/// Environment variables available to the command.
 	/// </summary>
-	public IDictionary<string, string> Environment { get; }
+	public IDictionary<string, string> Environment { get; } = environment ?? new Dictionary<string, string>();
 
 	/// <summary>
 	/// Indicates whether the command should cause the shell to exit.
@@ -104,9 +95,10 @@ public sealed class CommandExecutionContext
 
 	/// <summary>
 	/// Resolve a path relative to the working directory.
+	/// Returns a native filesystem path that works with Directory.Exists, File.Exists, etc.
 	/// </summary>
 	/// <param name="path">The path to resolve.</param>
-	/// <returns>The resolved absolute path.</returns>
+	/// <returns>The resolved absolute path in native format.</returns>
 	public string ResolvePath(string path)
 	{
 		if (string.IsNullOrWhiteSpace(path))
@@ -114,25 +106,52 @@ public sealed class CommandExecutionContext
 			return WorkingDirectory.FullName;
 		}
 
-		// Absolute path
-		if (Path.IsPathRooted(path))
+		// Normalize path separators to forward slashes for consistent parsing
+		// But preserve drive root paths like "C:/" or "C:\"
+		path = path.Replace('\\', '/');
+		
+		// Only trim trailing slashes if it's not a drive root (e.g., "C:/")
+		if (!(path.Length == 3 && char.IsLetter(path[0]) && path[1] == ':' && path[2] == '/'))
 		{
-			return NormalizePath(path);
+			path = path.TrimEnd('/');
 		}
 
 		// Handle ~ for home
 		if (path == "~")
 		{
-			return "/root";
+			return System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
 		}
 		else if (path.StartsWith("~/"))
 		{
-			return NormalizePath("/root" + path[1..]);
+			var homePath = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
+			var relativePart = path[2..];
+			return Path.GetFullPath(Path.Combine(homePath, relativePart));
 		}
 
-		// Relative path
+		// Absolute path (Unix style or Windows style)
+		if (path.StartsWith('/'))
+		{
+			// Unix-style absolute path - on Windows, treat as root of current drive
+			if (OperatingSystem.IsWindows())
+			{
+				var currentDrive = Path.GetPathRoot(WorkingDirectory.FullName) ?? "C:\\";
+				var relativePart = path.TrimStart('/');
+				return Path.GetFullPath(Path.Combine(currentDrive, relativePart));
+			}
+			else
+			{
+				return Path.GetFullPath(path);
+			}
+		}
+		else if (Path.IsPathRooted(path))
+		{
+			// Windows-style absolute path like C:/foo
+			return Path.GetFullPath(path);
+		}
+
+		// Relative path - combine with working directory
 		var combined = Path.Combine(WorkingDirectory.FullName, path);
-		return NormalizePath(combined);
+		return Path.GetFullPath(combined);
 	}
 
 	/// <summary>
@@ -156,7 +175,9 @@ public sealed class CommandExecutionContext
 	/// </summary>
 	private static string NormalizePath(string path)
 	{
-		var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+		// Normalize path separators - handle both forward and backward slashes
+		var normalizedPath = path.Replace('\\', '/');
+		var parts = normalizedPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
 		var stack = new Stack<string>();
 
 		foreach (var part in parts)
