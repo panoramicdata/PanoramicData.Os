@@ -73,6 +73,33 @@ public sealed class ShellCommandSpecification
 	public bool IsHidden { get; init; }
 
 	/// <summary>
+	/// Supported output types for the --as flag.
+	/// First type is the default. Empty array means command outputs nothing to the pipeline.
+	/// </summary>
+	public Type[] OutputTypes { get; init; } = [];
+
+	/// <summary>
+	/// Supported input types for piped input.
+	/// Empty array means command doesn't accept piped input.
+	/// </summary>
+	public Type[] InputTypes { get; init; } = [];
+
+	/// <summary>
+	/// The default output type (first in OutputTypes, or null if no outputs).
+	/// </summary>
+	public Type? DefaultOutputType => OutputTypes.Length > 0 ? OutputTypes[0] : null;
+
+	/// <summary>
+	/// Whether this command can accept piped input.
+	/// </summary>
+	public bool AcceptsPipedInput => InputTypes.Length > 0;
+
+	/// <summary>
+	/// Whether this command produces output for the pipeline.
+	/// </summary>
+	public bool ProducesOutput => OutputTypes.Length > 0;
+
+	/// <summary>
 	/// Gets the positional options in order.
 	/// </summary>
 	public IEnumerable<OptionSpec> PositionalOptions =>
