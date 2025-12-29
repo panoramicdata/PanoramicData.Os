@@ -5,7 +5,7 @@ namespace PanoramicData.Os.Init.Test.Shell;
 /// <summary>
 /// Tests for the LineEditor class.
 /// </summary>
-public class LineEditorTests : IDisposable
+public class LineEditorTests : BaseTest, IDisposable
 {
 	private readonly MockTerminalIO _mockIO;
 	private readonly LineEditor _editor;

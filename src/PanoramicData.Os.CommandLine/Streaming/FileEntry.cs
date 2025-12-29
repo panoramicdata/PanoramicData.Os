@@ -2,7 +2,8 @@ namespace PanoramicData.Os.CommandLine.Streaming;
 
 /// <summary>
 /// Represents a file or directory entry in the file system.
-/// Used as the default output from the ls command.
+/// Used as the default output from the ls command in the streaming pipeline.
+/// Named FileEntry to avoid conflict with Shell.Commands.FileSystemEntry.
 /// </summary>
 /// <param name="Name">The name of the file or directory.</param>
 /// <param name="FullPath">The full path to the file or directory.</param>
@@ -13,7 +14,7 @@ namespace PanoramicData.Os.CommandLine.Streaming;
 /// <param name="IsDirectory">True if this is a directory.</param>
 /// <param name="Attributes">File system attributes.</param>
 /// <param name="Metadata">Stream metadata.</param>
-public readonly record struct FileSystemEntry(
+public readonly record struct FileEntry(
 	string Name,
 	string FullPath,
 	long Size = 0,
@@ -25,9 +26,9 @@ public readonly record struct FileSystemEntry(
 	StreamMetadata Metadata = default) : IStreamObject
 {
 	/// <summary>
-	/// Create a FileSystemEntry from a FileInfo.
+	/// Create a FileEntry from a FileInfo.
 	/// </summary>
-	public static FileSystemEntry FromFile(FileInfo file) => new(
+	public static FileEntry FromFile(FileInfo file) => new(
 		Name: file.Name,
 		FullPath: file.FullName,
 		Size: file.Exists ? file.Length : 0,
@@ -39,9 +40,9 @@ public readonly record struct FileSystemEntry(
 		Metadata: StreamMetadata.Now(file.DirectoryName));
 
 	/// <summary>
-	/// Create a FileSystemEntry from a DirectoryInfo.
+	/// Create a FileEntry from a DirectoryInfo.
 	/// </summary>
-	public static FileSystemEntry FromDirectory(DirectoryInfo dir) => new(
+	public static FileEntry FromDirectory(DirectoryInfo dir) => new(
 		Name: dir.Name,
 		FullPath: dir.FullName,
 		Size: 0,
@@ -53,9 +54,9 @@ public readonly record struct FileSystemEntry(
 		Metadata: StreamMetadata.Now(dir.Parent?.FullName));
 
 	/// <summary>
-	/// Create a FileSystemEntry from a path string.
+	/// Create a FileEntry from a path string.
 	/// </summary>
-	public static FileSystemEntry FromPath(string path)
+	public static FileEntry FromPath(string path)
 	{
 		if (Directory.Exists(path))
 		{

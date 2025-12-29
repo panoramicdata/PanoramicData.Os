@@ -6,7 +6,7 @@ namespace PanoramicData.Os.Init.Test.Shell;
 /// <summary>
 /// Tests for the TabCompleter class.
 /// </summary>
-public class TabCompleterTests
+public class TabCompleterTests : BaseTest
 {
 	[Fact]
 	public void Complete_WithNoMatches_ReturnsNotApplied()

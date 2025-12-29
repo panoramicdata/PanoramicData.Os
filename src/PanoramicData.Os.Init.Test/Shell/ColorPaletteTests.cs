@@ -3,7 +3,7 @@ namespace PanoramicData.Os.Init.Test.Shell;
 /// <summary>
 /// Tests for the ColorPalette class.
 /// </summary>
-public class ColorPaletteTests
+public class ColorPaletteTests : BaseTest
 {
 	[Fact]
 	public void CreateDefaultDark_ReturnsValidPalette()

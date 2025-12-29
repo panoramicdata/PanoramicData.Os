@@ -5,7 +5,7 @@ namespace PanoramicData.Os.Init.Test.Shell;
 /// <summary>
 /// Tests for the Terminal class.
 /// </summary>
-public class TerminalTests : IDisposable
+public class TerminalTests : BaseTest, IDisposable
 {
 	private readonly MockTerminalIO _mockIO;
 	private readonly Terminal _terminal;

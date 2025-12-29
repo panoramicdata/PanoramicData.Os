@@ -109,7 +109,7 @@ public sealed class CommandExecutionContext(
 		// Normalize path separators to forward slashes for consistent parsing
 		// But preserve drive root paths like "C:/" or "C:\"
 		path = path.Replace('\\', '/');
-		
+
 		// Only trim trailing slashes if it's not a drive root (e.g., "C:/")
 		if (!(path.Length == 3 && char.IsLetter(path[0]) && path[1] == ':' && path[2] == '/'))
 		{
