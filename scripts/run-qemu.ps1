@@ -3,6 +3,7 @@
 
 param(
     [switch]$Graphics,
+    [switch]$NoAccel,
     [string]$Memory = "512M",
     [int]$Cpus = 2,
     [string]$Kernel = "",
@@ -14,6 +15,24 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptDir
 $OutputDir = Join-Path $RepoRoot "output"
+
+# Find QEMU executable
+$QemuExe = "qemu-system-x86_64"
+$QemuPath = Get-Command $QemuExe -ErrorAction SilentlyContinue
+if (-not $QemuPath) {
+    # Check common installation locations
+    $commonPaths = @(
+        "C:\Program Files\qemu\qemu-system-x86_64.exe",
+        "C:\Program Files (x86)\qemu\qemu-system-x86_64.exe",
+        "$env:LOCALAPPDATA\Programs\qemu\qemu-system-x86_64.exe"
+    )
+    foreach ($path in $commonPaths) {
+        if (Test-Path $path) {
+            $QemuExe = $path
+            break
+        }
+    }
+}
 
 # Set defaults if not provided
 if (-not $Kernel) { $Kernel = Join-Path $OutputDir "vmlinuz" }
@@ -57,20 +76,22 @@ $QemuArgs = @(
 
 # Try to enable hardware acceleration
 # Check for WHPX (Windows Hypervisor Platform)
-$whpxAvailable = $false
-try {
-    $whpxCheck = & qemu-system-x86_64 -accel help 2>&1
-    if ($whpxCheck -match "whpx") {
-        $whpxAvailable = $true
-    }
-} catch {}
+$useWhpx = $false
+if (-not $NoAccel) {
+    try {
+        $whpxCheck = & $QemuExe -accel help 2>&1
+        if ($whpxCheck -match "whpx") {
+            $useWhpx = $true
+        }
+    } catch {}
+}
 
-if ($whpxAvailable) {
-    Write-Host "Using WHPX acceleration" -ForegroundColor Green
+if ($useWhpx) {
+    Write-Host "Using WHPX acceleration (use -NoAccel to disable)" -ForegroundColor Green
     $QemuArgs += @("-accel", "whpx", "-cpu", "max")
 } else {
     Write-Host "Using TCG (software emulation)" -ForegroundColor Yellow
-    $QemuArgs += @("-cpu", "max")
+    $QemuArgs += @("-accel", "tcg", "-cpu", "max")
 }
 
 # Add graphics options
@@ -81,4 +102,4 @@ if ($Graphics) {
 }
 
 # Run QEMU
-& qemu-system-x86_64 @QemuArgs
+& $QemuExe @QemuArgs

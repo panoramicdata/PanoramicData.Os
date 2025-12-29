@@ -7,6 +7,15 @@ namespace PanoramicData.Os.Init.Linux;
 /// </summary>
 internal static partial class Syscalls
 {
+	// File open flags
+	public const int O_RDONLY = 0;
+	public const int O_WRONLY = 1;
+	public const int O_RDWR = 2;
+	public const int O_CREAT = 64;
+	public const int O_TRUNC = 512;
+	public const int O_APPEND = 1024;
+	public const int O_NONBLOCK = 2048;
+
 	// Mount flags
 	public const ulong MS_RDONLY = 1;
 	public const ulong MS_NOSUID = 2;

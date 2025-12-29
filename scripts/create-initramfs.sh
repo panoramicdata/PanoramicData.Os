@@ -35,6 +35,9 @@ mknod -m 622 dev/console c 5 1 || true
 mknod -m 666 dev/null c 1 3 || true
 mknod -m 666 dev/zero c 1 5 || true
 mknod -m 666 dev/tty c 5 0 || true
+# Serial console (used by QEMU)
+mknod -m 666 dev/ttyS0 c 4 64 || true
+mknod -m 666 dev/tty0 c 4 0 || true
 
 echo "Creating /etc files..."
 echo "panos" > "${INITRAMFS_DIR}/etc/hostname"
